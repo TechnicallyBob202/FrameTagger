@@ -9,7 +9,6 @@ from typing import List, Optional
 from datetime import datetime
 import os
 from pathlib import Path
-import shutil
 
 # Database setup
 DATABASE_URL = "sqlite:///./imagetagger.db"
@@ -26,13 +25,22 @@ image_tags = Table(
 )
 
 # Database Models
+class Folder(Base):
+    __tablename__ = "folders"
+    id = Column(Integer, primary_key=True)
+    path = Column(String, unique=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    images = relationship("Image", back_populates="folder", cascade="all, delete-orphan")
+
 class Image(Base):
     __tablename__ = "images"
     id = Column(Integer, primary_key=True)
     filename = Column(String, unique=True)
     original_filename = Column(String)
     path = Column(String)
+    folder_id = Column(Integer, ForeignKey('folders.id'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    folder = relationship("Folder", back_populates="images")
     tags = relationship("Tag", secondary=image_tags, back_populates="images")
 
 class Tag(Base):
@@ -45,7 +53,14 @@ class Tag(Base):
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-# Pydantic models for API
+# Pydantic models
+class FolderSchema(BaseModel):
+    id: Optional[int] = None
+    path: str
+    created_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
 class TagSchema(BaseModel):
     id: Optional[int] = None
     name: str
@@ -83,7 +98,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create uploads directory
+# Create default uploads directory
 UPLOAD_DIR = Path("./uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -94,35 +109,31 @@ def get_db():
     finally:
         db.close()
 
-# Scan uploads directory and add missing files to database
-def scan_and_register_files(db: Session = None):
-    """Scan uploads directory and register any files not in database"""
-    close_db = False
-    if db is None:
-        db = SessionLocal()
-        close_db = True
-    
+def scan_folder(folder_path: str, folder_id: int, db: Session):
+    """Scan a folder and register images"""
     added = 0
     try:
-        # Get all image files in uploads directory
+        folder_path = Path(folder_path)
+        if not folder_path.exists():
+            return 0
+        
         image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff'}
         files_on_disk = {
-            f.name for f in UPLOAD_DIR.glob('*')
+            f.name for f in folder_path.glob('*')
             if f.is_file() and f.suffix.lower() in image_extensions
         }
         
-        # Get all registered filenames in database
         registered_files = {
-            img.filename for img in db.query(Image).all()
+            img.filename for img in db.query(Image).filter(Image.folder_id == folder_id).all()
         }
         
-        # Add any missing files
         for filename in files_on_disk - registered_files:
-            file_path = UPLOAD_DIR / filename
+            file_path = folder_path / filename
             db_image = Image(
                 filename=filename,
                 original_filename=filename,
                 path=str(file_path),
+                folder_id=folder_id,
                 created_at=datetime.fromtimestamp(file_path.stat().st_ctime)
             )
             db.add(db_image)
@@ -130,23 +141,62 @@ def scan_and_register_files(db: Session = None):
         
         if added > 0:
             db.commit()
-            print(f"[Startup] Registered {added} new image files from uploads directory")
     except Exception as e:
-        print(f"Error scanning uploads directory: {e}")
+        print(f"Error scanning folder {folder_path}: {e}")
         db.rollback()
-    finally:
-        if close_db:
-            db.close()
     
     return added
 
-# Startup event
 @app.on_event("startup")
 async def startup_event():
-    """Scan uploads directory on startup"""
-    scan_and_register_files()
+    """Scan all configured folders on startup"""
+    db = SessionLocal()
+    try:
+        folders = db.query(Folder).all()
+        total = 0
+        for folder in folders:
+            added = scan_folder(folder.path, folder.id, db)
+            total += added
+        if total > 0:
+            print(f"[Startup] Registered {total} new image files")
+    finally:
+        db.close()
 
-# Routes
+# Folder endpoints
+@app.get("/api/folders", response_model=List[FolderSchema])
+def get_folders(db: Session = Depends(get_db)):
+    return db.query(Folder).all()
+
+@app.post("/api/folders", response_model=FolderSchema)
+def add_folder(folder: FolderSchema, db: Session = Depends(get_db)):
+    existing = db.query(Folder).filter(Folder.path == folder.path).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Folder already added")
+    
+    db_folder = Folder(path=folder.path)
+    db.add(db_folder)
+    db.commit()
+    db.refresh(db_folder)
+    
+    # Scan it immediately
+    scan_folder(folder.path, db_folder.id, db)
+    
+    return db_folder
+
+@app.delete("/api/folders/{folder_id}")
+def remove_folder(folder_id: int, db: Session = Depends(get_db)):
+    folder = db.query(Folder).filter(Folder.id == folder_id).first()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    
+    # Delete all images in this folder
+    db.query(Image).filter(Image.folder_id == folder_id).delete()
+    db.delete(folder)
+    db.commit()
+    
+    return {"status": "success"}
+
+# Image endpoints
 @app.get("/api/images", response_model=List[ImageListSchema])
 def get_images(skip: int = 0, limit: int = 100, tag_ids: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(Image)
@@ -185,6 +235,7 @@ def remove_tag_from_image(image_id: int, tag_id: int, db: Session = Depends(get_
         db.commit()
     return {"status": "success"}
 
+# Tag endpoints
 @app.get("/api/tags", response_model=List[TagSchema])
 def get_tags(db: Session = Depends(get_db)):
     return db.query(Tag).all()
@@ -253,7 +304,6 @@ def download_image(image_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/batch/tag")
 def batch_tag_images(image_ids: List[int], tag_id: int, db: Session = Depends(get_db)):
-    """Add a tag to multiple images"""
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
@@ -268,7 +318,6 @@ def batch_tag_images(image_ids: List[int], tag_id: int, db: Session = Depends(ge
 
 @app.delete("/api/batch/untag")
 def batch_untag_images(image_ids: List[int], tag_id: int, db: Session = Depends(get_db)):
-    """Remove a tag from multiple images"""
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
@@ -282,10 +331,12 @@ def batch_untag_images(image_ids: List[int], tag_id: int, db: Session = Depends(
     return {"untagged": count}
 
 @app.post("/api/rescan")
-def rescan_uploads(db: Session = Depends(get_db)):
-    """Rescan uploads directory and register new files"""
-    added = scan_and_register_files(db)
-    return {"added": added, "message": f"Registered {added} new image files"}
+def rescan_all_folders(db: Session = Depends(get_db)):
+    folders = db.query(Folder).all()
+    total = 0
+    for folder in folders:
+        total += scan_folder(folder.path, folder.id, db)
+    return {"added": total, "message": f"Registered {total} new image files"}
 
 @app.get("/health")
 def health():

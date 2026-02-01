@@ -1,7 +1,193 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = 'http://localhost:8003/api';
+
+// Settings Modal Component
+const SettingsModal = ({ isOpen, onClose, folders, tags, onFolderAdd, onFolderRemove, onTagUpdate, onTagDelete, onRescan, theme, onThemeChange }) => {
+  const [activeTab, setActiveTab] = useState('folders');
+  const [newFolderPath, setNewFolderPath] = useState('');
+  const [editingTag, setEditingTag] = useState(null);
+  const [editTagName, setEditTagName] = useState('');
+  const [editTagColor, setEditTagColor] = useState('');
+
+  const handleAddFolder = async () => {
+    if (!newFolderPath.trim()) return;
+    await onFolderAdd(newFolderPath);
+    setNewFolderPath('');
+  };
+
+  const handleEditTag = (tag) => {
+    setEditingTag(tag.id);
+    setEditTagName(tag.name);
+    setEditTagColor(tag.color);
+  };
+
+  const handleSaveTag = async () => {
+    await onTagUpdate(editingTag, editTagName, editTagColor);
+    setEditingTag(null);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="settings-header">
+          <h2>Settings</h2>
+          <button className="settings-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="settings-tabs">
+          <button 
+            className={`tab-btn ${activeTab === 'folders' ? 'active' : ''}`}
+            onClick={() => setActiveTab('folders')}
+          >
+            Scan Folders
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'theme' ? 'active' : ''}`}
+            onClick={() => setActiveTab('theme')}
+          >
+            Theme
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'tags' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tags')}
+          >
+            Manage Tags
+          </button>
+        </div>
+
+        <div className="settings-content">
+          {activeTab === 'folders' && (
+            <div className="settings-section">
+              <h3>Configured Folders</h3>
+              
+              <div className="add-folder">
+                <input
+                  type="text"
+                  placeholder="/mnt/media/images/frame_art"
+                  value={newFolderPath}
+                  onChange={(e) => setNewFolderPath(e.target.value)}
+                  className="folder-input"
+                />
+                <button className="add-folder-btn" onClick={handleAddFolder}>
+                  Add Folder
+                </button>
+              </div>
+
+              <div className="folders-list">
+                {folders.length === 0 ? (
+                  <p className="empty-state">No folders configured. Add one to get started.</p>
+                ) : (
+                  folders.map((folder) => (
+                    <div key={folder.id} className="folder-item">
+                      <div className="folder-path">{folder.path}</div>
+                      <button
+                        className="remove-folder-btn"
+                        onClick={() => {
+                          if (window.confirm(`Remove folder and all associated images?\n\n${folder.path}`)) {
+                            onFolderRemove(folder.id);
+                          }
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <button className="rescan-all-btn" onClick={onRescan}>
+                Rescan All Folders
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'theme' && (
+            <div className="settings-section">
+              <h3>Appearance</h3>
+              <div className="theme-options">
+                <label className="theme-option">
+                  <input
+                    type="radio"
+                    name="theme"
+                    value="light"
+                    checked={theme === 'light'}
+                    onChange={(e) => onThemeChange(e.target.value)}
+                  />
+                  Light
+                </label>
+                <label className="theme-option">
+                  <input
+                    type="radio"
+                    name="theme"
+                    value="dark"
+                    checked={theme === 'dark'}
+                    onChange={(e) => onThemeChange(e.target.value)}
+                  />
+                  Dark
+                </label>
+                <label className="theme-option">
+                  <input
+                    type="radio"
+                    name="theme"
+                    value="auto"
+                    checked={theme === 'auto'}
+                    onChange={(e) => onThemeChange(e.target.value)}
+                  />
+                  Auto (System)
+                </label>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'tags' && (
+            <div className="settings-section">
+              <h3>Manage Tags</h3>
+              <div className="tags-list">
+                {tags.length === 0 ? (
+                  <p className="empty-state">No tags yet.</p>
+                ) : (
+                  tags.map((tag) => (
+                    <div key={tag.id} className="tag-item">
+                      {editingTag === tag.id ? (
+                        <div className="tag-edit">
+                          <input
+                            type="text"
+                            value={editTagName}
+                            onChange={(e) => setEditTagName(e.target.value)}
+                            className="tag-name-input"
+                          />
+                          <input
+                            type="color"
+                            value={editTagColor}
+                            onChange={(e) => setEditTagColor(e.target.value)}
+                            className="tag-color-input"
+                          />
+                          <button className="save-btn" onClick={handleSaveTag}>Save</button>
+                          <button className="cancel-btn" onClick={() => setEditingTag(null)}>Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="tag-display">
+                          <span className="tag-name">{tag.name}</span>
+                          <div className="tag-color-preview" style={{ backgroundColor: tag.color }}></div>
+                          <button className="edit-btn" onClick={() => handleEditTag(tag)}>Edit</button>
+                          <button className="delete-btn" onClick={() => onTagDelete(tag.id)}>Delete</button>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Image Grid Component
 const ImageGrid = ({ images, selectedImages, onSelect, onImageClick }) => {
@@ -14,7 +200,7 @@ const ImageGrid = ({ images, selectedImages, onSelect, onImageClick }) => {
           onClick={() => onImageClick(image)}
         >
           <div className="image-wrapper">
-            <img src={`/uploads/${image.filename}`} alt={image.original_filename} />
+            <img src={`${API_URL}/../uploads/${image.filename}`} alt={image.original_filename} />
             <div className="overlay">
               <input
                 type="checkbox"
@@ -69,8 +255,8 @@ const TagFilter = ({ tags, selectedTags, onTagToggle }) => {
   );
 };
 
-// Batch Tagging Component
-const BatchTagger = ({ tags, onApply, selectedCount, allImages, selectedImages }) => {
+// Batch Tagger Component
+const BatchTagger = ({ tags, onApply, selectedCount, selectedImages }) => {
   const [selectedTag, setSelectedTag] = useState(tags[0]?.id || null);
   const [action, setAction] = useState('add');
 
@@ -153,7 +339,7 @@ const ImageModal = ({ image, tags, onClose, onTagToggle, onDownload }) => {
         
         <div className="modal-body">
           <div className="modal-image">
-            <img src={`/uploads/${image.filename}`} alt={image.original_filename} />
+            <img src={`${API_URL}/../uploads/${image.filename}`} alt={image.original_filename} />
           </div>
 
           <div className="modal-info">
@@ -199,12 +385,25 @@ const ImageModal = ({ image, tags, onClose, onTagToggle, onDownload }) => {
 export default function App() {
   const [images, setImages] = useState([]);
   const [tags, setTags] = useState([]);
+  const [folders, setFolders] = useState([]);
   const [selectedImages, setSelectedImages] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedModal, setSelectedModal] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState(localStorage.getItem('frametagger-theme') || 'auto');
 
-  // Fetch images and tags
+  // Apply theme
+  useEffect(() => {
+    let appliedTheme = theme;
+    if (theme === 'auto') {
+      appliedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', appliedTheme);
+    localStorage.setItem('frametagger-theme', theme);
+  }, [theme]);
+
+  // Fetch data
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -212,16 +411,19 @@ export default function App() {
       const params = new URLSearchParams();
       if (tagIds) params.append('tag_ids', tagIds);
 
-      const [imagesRes, tagsRes] = await Promise.all([
+      const [imagesRes, tagsRes, foldersRes] = await Promise.all([
         fetch(`${API_URL}/images?${params}`),
         fetch(`${API_URL}/tags`),
+        fetch(`${API_URL}/folders`),
       ]);
 
       const imagesData = await imagesRes.json();
       const tagsData = await tagsRes.json();
+      const foldersData = await foldersRes.json();
 
       setImages(imagesData);
       setTags(tagsData);
+      setFolders(foldersData);
     } catch (error) {
       console.error('Failed to fetch data:', error);
     }
@@ -302,6 +504,73 @@ export default function App() {
     }
   };
 
+  const handleAddFolder = async (path) => {
+    try {
+      const response = await fetch(`${API_URL}/folders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+
+      if (response.ok) {
+        fetchData();
+        return true;
+      } else {
+        const data = await response.json();
+        alert(`Error: ${data.detail}`);
+      }
+    } catch (error) {
+      console.error('Failed to add folder:', error);
+    }
+    return false;
+  };
+
+  const handleRemoveFolder = async (folderId) => {
+    try {
+      const response = await fetch(`${API_URL}/folders/${folderId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Failed to remove folder:', error);
+    }
+  };
+
+  const handleUpdateTag = async (tagId, name, color) => {
+    try {
+      const response = await fetch(`${API_URL}/tags/${tagId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, color }),
+      });
+
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Failed to update tag:', error);
+    }
+  };
+
+  const handleDeleteTag = async (tagId) => {
+    if (window.confirm('Delete this tag?')) {
+      try {
+        const response = await fetch(`${API_URL}/tags/${tagId}`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          fetchData();
+        }
+      } catch (error) {
+        console.error('Failed to delete tag:', error);
+      }
+    }
+  };
+
   const handleRescan = async () => {
     try {
       const response = await fetch(`${API_URL}/rescan`, {
@@ -319,26 +588,12 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" data-theme={theme === 'auto' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme}>
       <header className="header">
+        <button className="hamburger" onClick={() => setSettingsOpen(true)}>☰</button>
         <div className="header-content">
           <h1>FrameTagger</h1>
           <p className="subtitle">Curate your collection with precision</p>
-        </div>
-        <div className="header-buttons">
-          <button className="rescan-btn" onClick={handleRescan} title="Scan uploads folder for new images">
-            Rescan Folder
-          </button>
-          <label className="upload-btn">
-            <input
-              type="file"
-              multiple
-              onChange={handleFileUpload}
-              accept="image/*"
-              hidden
-            />
-            Upload Images
-          </label>
         </div>
       </header>
 
@@ -370,7 +625,7 @@ export default function App() {
               />
               {images.length === 0 && (
                 <div className="empty-state">
-                  <p>No images yet. Upload some to get started!</p>
+                  <p>No images yet. Add folders in Settings to get started!</p>
                 </div>
               )}
             </>
@@ -382,11 +637,24 @@ export default function App() {
         tags={tags}
         selectedImages={selectedImages}
         selectedCount={selectedImages.length}
-        allImages={images}
         onApply={() => {
           setSelectedImages([]);
           fetchData();
         }}
+      />
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        folders={folders}
+        tags={tags}
+        onFolderAdd={handleAddFolder}
+        onFolderRemove={handleRemoveFolder}
+        onTagUpdate={handleUpdateTag}
+        onTagDelete={handleDeleteTag}
+        onRescan={handleRescan}
+        theme={theme}
+        onThemeChange={setTheme}
       />
 
       <ImageModal
