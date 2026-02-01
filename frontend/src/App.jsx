@@ -3,18 +3,157 @@ import './App.css';
 
 const API_URL = 'http://localhost:8003/api';
 
-// Settings Modal Component
-const SettingsModal = ({ isOpen, onClose, folders, tags, onFolderAdd, onFolderRemove, onTagUpdate, onTagDelete, onRescan, theme, onThemeChange }) => {
+// Folder Browser Component
+const FolderBrowser = ({ onSelectFolder, startPath = "/mnt/media" }) => {
+  const [currentPath, setCurrentPath] = useState(startPath);
+  const [folders, setFolders] = useState([]);
+  const [parentPath, setParentPath] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const browseFolders = useCallback(async (path) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/browse-folders?path=${encodeURIComponent(path)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentPath(data.current_path);
+        setFolders(data.folders);
+        setParentPath(data.parent_path);
+      }
+    } catch (error) {
+      console.error('Failed to browse folders:', error);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    browseFolders(currentPath);
+  }, [currentPath, browseFolders]);
+
+  const goUp = () => {
+    if (parentPath) setCurrentPath(parentPath);
+  };
+
+  return (
+    <div className="folder-browser">
+      <div className="browser-header">
+        <button 
+          className="up-btn" 
+          onClick={goUp}
+          disabled={!parentPath}
+          title="Go to parent folder"
+        >
+          ↑
+        </button>
+        <div className="current-path">{currentPath}</div>
+      </div>
+
+      {loading ? (
+        <div className="browser-loading">Loading...</div>
+      ) : (
+        <div className="folders-browser-list">
+          {folders.length === 0 ? (
+            <p className="no-folders">No folders found</p>
+          ) : (
+            folders.map((folder) => (
+              <div key={folder.path} className="browser-folder-item">
+                <button 
+                  className="folder-btn"
+                  onClick={() => setCurrentPath(folder.path)}
+                  title="Double-click or click to navigate"
+                >
+                  📁 {folder.name}
+                </button>
+                <button
+                  className="select-folder-btn"
+                  onClick={() => onSelectFolder(folder.path)}
+                  title="Add this folder"
+                >
+                  Add
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      <div className="browser-footer">
+        <button
+          className="select-current-btn"
+          onClick={() => onSelectFolder(currentPath)}
+        >
+          Add Current Folder
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Tag Preview Dialog
+const TagPreviewDialog = ({ tags, onConfirm, onCancel }) => {
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="preview-dialog" onClick={(e) => e.stopPropagation()}>
+        <h3>Create Tags</h3>
+        <p className="preview-subtitle">You're about to create {tags.length} tag(s):</p>
+        
+        <div className="tags-preview-list">
+          {tags.map((tag, idx) => (
+            <div key={idx} className="preview-tag">
+              {tag}
+            </div>
+          ))}
+        </div>
+
+        <div className="preview-buttons">
+          <button className="cancel-btn" onClick={onCancel}>Cancel</button>
+          <button className="confirm-btn" onClick={onConfirm}>Create Tags</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Settings Drawer Component
+const SettingsDrawer = ({ 
+  isOpen, 
+  onClose, 
+  folders, 
+  tags, 
+  onFolderAdd, 
+  onFolderRemove, 
+  onTagCreate,
+  onTagUpdate, 
+  onTagDelete, 
+  onRescan, 
+  theme, 
+  onThemeChange 
+}) => {
   const [activeTab, setActiveTab] = useState('folders');
-  const [newFolderPath, setNewFolderPath] = useState('');
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const [tagInput, setTagInput] = useState('');
   const [editingTag, setEditingTag] = useState(null);
   const [editTagName, setEditTagName] = useState('');
   const [editTagColor, setEditTagColor] = useState('');
+  const [previewTags, setPreviewTags] = useState(null);
 
-  const handleAddFolder = async () => {
-    if (!newFolderPath.trim()) return;
-    await onFolderAdd(newFolderPath);
-    setNewFolderPath('');
+  const handleAddTags = () => {
+    const tagNames = tagInput
+      .split(',')
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+
+    if (tagNames.length === 0) return;
+
+    setPreviewTags(tagNames);
+  };
+
+  const confirmCreateTags = async () => {
+    for (const tagName of previewTags) {
+      await onTagCreate(tagName);
+    }
+    setTagInput('');
+    setPreviewTags(null);
   };
 
   const handleEditTag = (tag) => {
@@ -28,164 +167,189 @@ const SettingsModal = ({ isOpen, onClose, folders, tags, onFolderAdd, onFolderRe
     setEditingTag(null);
   };
 
-  if (!isOpen) return null;
+  const handleSelectFolder = async (path) => {
+    await onFolderAdd(path);
+    setShowFolderBrowser(false);
+  };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-header">
+    <>
+      <div className={`drawer-overlay ${isOpen ? 'open' : ''}`} onClick={onClose}></div>
+      
+      <div className={`settings-drawer ${isOpen ? 'open' : ''}`}>
+        <div className="drawer-header">
           <h2>Settings</h2>
-          <button className="settings-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="settings-tabs">
-          <button 
-            className={`tab-btn ${activeTab === 'folders' ? 'active' : ''}`}
-            onClick={() => setActiveTab('folders')}
-          >
-            Scan Folders
-          </button>
-          <button 
-            className={`tab-btn ${activeTab === 'theme' ? 'active' : ''}`}
-            onClick={() => setActiveTab('theme')}
-          >
-            Theme
-          </button>
-          <button 
-            className={`tab-btn ${activeTab === 'tags' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tags')}
-          >
-            Manage Tags
-          </button>
-        </div>
+        <div className="drawer-container">
+          <div className="drawer-nav">
+            <button 
+              className={`nav-btn ${activeTab === 'folders' ? 'active' : ''}`}
+              onClick={() => { setActiveTab('folders'); setShowFolderBrowser(false); }}
+            >
+              📁 Folders
+            </button>
+            <button 
+              className={`nav-btn ${activeTab === 'theme' ? 'active' : ''}`}
+              onClick={() => setActiveTab('theme')}
+            >
+              🎨 Theme
+            </button>
+            <button 
+              className={`nav-btn ${activeTab === 'tags' ? 'active' : ''}`}
+              onClick={() => setActiveTab('tags')}
+            >
+              🏷️ Tags
+            </button>
+          </div>
 
-        <div className="settings-content">
-          {activeTab === 'folders' && (
-            <div className="settings-section">
-              <h3>Configured Folders</h3>
-              
-              <div className="add-folder">
-                <input
-                  type="text"
-                  placeholder="/mnt/media/images/frame_art"
-                  value={newFolderPath}
-                  onChange={(e) => setNewFolderPath(e.target.value)}
-                  className="folder-input"
-                />
-                <button className="add-folder-btn" onClick={handleAddFolder}>
-                  Add Folder
+          <div className="drawer-content">
+            {activeTab === 'folders' && !showFolderBrowser && (
+              <div className="drawer-section">
+                <h3>Scan Folders</h3>
+                
+                <button className="add-folder-browser-btn" onClick={() => setShowFolderBrowser(true)}>
+                  + Browse and Add Folder
+                </button>
+
+                <div className="folders-list">
+                  {folders.length === 0 ? (
+                    <p className="empty-state">No folders configured yet</p>
+                  ) : (
+                    folders.map((folder) => (
+                      <div key={folder.id} className="folder-item">
+                        <div className="folder-path">{folder.path}</div>
+                        <button
+                          className="remove-folder-btn"
+                          onClick={() => {
+                            if (window.confirm(`Remove folder and all associated images?\n\n${folder.path}`)) {
+                              onFolderRemove(folder.id);
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <button className="rescan-all-btn" onClick={onRescan}>
+                  🔄 Rescan All Folders
                 </button>
               </div>
+            )}
 
-              <div className="folders-list">
-                {folders.length === 0 ? (
-                  <p className="empty-state">No folders configured. Add one to get started.</p>
-                ) : (
-                  folders.map((folder) => (
-                    <div key={folder.id} className="folder-item">
-                      <div className="folder-path">{folder.path}</div>
-                      <button
-                        className="remove-folder-btn"
-                        onClick={() => {
-                          if (window.confirm(`Remove folder and all associated images?\n\n${folder.path}`)) {
-                            onFolderRemove(folder.id);
-                          }
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))
-                )}
+            {activeTab === 'folders' && showFolderBrowser && (
+              <FolderBrowser onSelectFolder={handleSelectFolder} />
+            )}
+
+            {activeTab === 'theme' && (
+              <div className="drawer-section">
+                <h3>Appearance</h3>
+                <div className="theme-options">
+                  <label className="theme-option">
+                    <input
+                      type="radio"
+                      name="theme"
+                      value="light"
+                      checked={theme === 'light'}
+                      onChange={(e) => onThemeChange(e.target.value)}
+                    />
+                    ☀️ Light
+                  </label>
+                  <label className="theme-option">
+                    <input
+                      type="radio"
+                      name="theme"
+                      value="dark"
+                      checked={theme === 'dark'}
+                      onChange={(e) => onThemeChange(e.target.value)}
+                    />
+                    🌙 Dark
+                  </label>
+                  <label className="theme-option">
+                    <input
+                      type="radio"
+                      name="theme"
+                      value="auto"
+                      checked={theme === 'auto'}
+                      onChange={(e) => onThemeChange(e.target.value)}
+                    />
+                    ⚙️ Auto (System)
+                  </label>
+                </div>
               </div>
+            )}
 
-              <button className="rescan-all-btn" onClick={onRescan}>
-                Rescan All Folders
-              </button>
-            </div>
-          )}
+            {activeTab === 'tags' && (
+              <div className="drawer-section">
+                <h3>Manage Tags</h3>
+                
+                <div className="tag-creation">
+                  <input
+                    type="text"
+                    placeholder="Create tags: Monet, Winter, Landscape"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    className="tag-input"
+                  />
+                  <p className="tag-help-text">💡 Separate multiple tags with commas</p>
+                  <button className="create-tags-btn" onClick={handleAddTags} disabled={!tagInput.trim()}>
+                    + Add Tags
+                  </button>
+                </div>
 
-          {activeTab === 'theme' && (
-            <div className="settings-section">
-              <h3>Appearance</h3>
-              <div className="theme-options">
-                <label className="theme-option">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="light"
-                    checked={theme === 'light'}
-                    onChange={(e) => onThemeChange(e.target.value)}
-                  />
-                  Light
-                </label>
-                <label className="theme-option">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="dark"
-                    checked={theme === 'dark'}
-                    onChange={(e) => onThemeChange(e.target.value)}
-                  />
-                  Dark
-                </label>
-                <label className="theme-option">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="auto"
-                    checked={theme === 'auto'}
-                    onChange={(e) => onThemeChange(e.target.value)}
-                  />
-                  Auto (System)
-                </label>
+                <div className="tags-list">
+                  {tags.length === 0 ? (
+                    <p className="empty-state">No tags yet</p>
+                  ) : (
+                    tags.map((tag) => (
+                      <div key={tag.id} className="tag-item">
+                        {editingTag === tag.id ? (
+                          <div className="tag-edit">
+                            <input
+                              type="text"
+                              value={editTagName}
+                              onChange={(e) => setEditTagName(e.target.value)}
+                              className="tag-name-input"
+                            />
+                            <input
+                              type="color"
+                              value={editTagColor}
+                              onChange={(e) => setEditTagColor(e.target.value)}
+                              className="tag-color-input"
+                            />
+                            <button className="save-btn" onClick={handleSaveTag}>Save</button>
+                            <button className="cancel-btn" onClick={() => setEditingTag(null)}>Cancel</button>
+                          </div>
+                        ) : (
+                          <div className="tag-display">
+                            <span className="tag-name">{tag.name}</span>
+                            <div className="tag-color-preview" style={{ backgroundColor: tag.color }}></div>
+                            <button className="edit-btn" onClick={() => handleEditTag(tag)}>Edit</button>
+                            <button className="delete-btn" onClick={() => onTagDelete(tag.id)}>Delete</button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-
-          {activeTab === 'tags' && (
-            <div className="settings-section">
-              <h3>Manage Tags</h3>
-              <div className="tags-list">
-                {tags.length === 0 ? (
-                  <p className="empty-state">No tags yet.</p>
-                ) : (
-                  tags.map((tag) => (
-                    <div key={tag.id} className="tag-item">
-                      {editingTag === tag.id ? (
-                        <div className="tag-edit">
-                          <input
-                            type="text"
-                            value={editTagName}
-                            onChange={(e) => setEditTagName(e.target.value)}
-                            className="tag-name-input"
-                          />
-                          <input
-                            type="color"
-                            value={editTagColor}
-                            onChange={(e) => setEditTagColor(e.target.value)}
-                            className="tag-color-input"
-                          />
-                          <button className="save-btn" onClick={handleSaveTag}>Save</button>
-                          <button className="cancel-btn" onClick={() => setEditingTag(null)}>Cancel</button>
-                        </div>
-                      ) : (
-                        <div className="tag-display">
-                          <span className="tag-name">{tag.name}</span>
-                          <div className="tag-color-preview" style={{ backgroundColor: tag.color }}></div>
-                          <button className="edit-btn" onClick={() => handleEditTag(tag)}>Edit</button>
-                          <button className="delete-btn" onClick={() => onTagDelete(tag.id)}>Delete</button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {previewTags && (
+        <TagPreviewDialog 
+          tags={previewTags}
+          onConfirm={confirmCreateTags}
+          onCancel={() => setPreviewTags(null)}
+        />
+      )}
+    </>
   );
 };
 
@@ -390,7 +554,7 @@ export default function App() {
   const [selectedTags, setSelectedTags] = useState([]);
   const [selectedModal, setSelectedModal] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem('frametagger-theme') || 'auto');
 
   // Apply theme
@@ -480,30 +644,6 @@ export default function App() {
     }
   };
 
-  const handleFileUpload = async (e) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    const formData = new FormData();
-    for (let file of files) {
-      formData.append('files', file);
-    }
-
-    try {
-      const response = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        fetchData();
-        e.target.value = '';
-      }
-    } catch (error) {
-      console.error('Upload failed:', error);
-    }
-  };
-
   const handleAddFolder = async (path) => {
     try {
       const response = await fetch(`${API_URL}/folders`, {
@@ -536,6 +676,22 @@ export default function App() {
       }
     } catch (error) {
       console.error('Failed to remove folder:', error);
+    }
+  };
+
+  const handleCreateTag = async (tagName) => {
+    try {
+      const response = await fetch(`${API_URL}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: tagName, color: '#6366f1' }),
+      });
+
+      if (response.ok) {
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Failed to create tag:', error);
     }
   };
 
@@ -588,9 +744,9 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-theme={theme === 'auto' ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme}>
+    <div className="app">
       <header className="header">
-        <button className="hamburger" onClick={() => setSettingsOpen(true)}>☰</button>
+        <button className="hamburger" onClick={() => setDrawerOpen(true)}>☰</button>
         <div className="header-content">
           <h1>FrameTagger</h1>
           <p className="subtitle">Curate your collection with precision</p>
@@ -625,7 +781,7 @@ export default function App() {
               />
               {images.length === 0 && (
                 <div className="empty-state">
-                  <p>No images yet. Add folders in Settings to get started!</p>
+                  <p>No images yet. Add folders in Settings (☰) to get started!</p>
                 </div>
               )}
             </>
@@ -643,13 +799,14 @@ export default function App() {
         }}
       />
 
-      <SettingsModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+      <SettingsDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
         folders={folders}
         tags={tags}
         onFolderAdd={handleAddFolder}
         onFolderRemove={handleRemoveFolder}
+        onTagCreate={handleCreateTag}
         onTagUpdate={handleUpdateTag}
         onTagDelete={handleDeleteTag}
         onRescan={handleRescan}

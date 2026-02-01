@@ -345,3 +345,28 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.get("/api/browse-folders")
+def browse_folders(path: str = "/mnt", db: Session = Depends(get_db)):
+    """List folders in a given directory"""
+    try:
+        folder_path = Path(path)
+        if not folder_path.exists():
+            raise HTTPException(status_code=404, detail="Path does not exist")
+        
+        folders = []
+        for item in sorted(folder_path.iterdir()):
+            if item.is_dir() and not item.name.startswith('.'):
+                folders.append({
+                    "name": item.name,
+                    "path": str(item),
+                    "is_dir": True
+                })
+        
+        return {
+            "current_path": str(folder_path),
+            "parent_path": str(folder_path.parent) if folder_path.parent != folder_path else None,
+            "folders": folders
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
