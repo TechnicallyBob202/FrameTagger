@@ -11,14 +11,41 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8003/api';
  * Modern, lightweight folder browser component
  * Uses async/await for clean code
  * Implements proper error handling and loading states
+ * Platform-aware (Windows/Linux)
  */
 const FolderBrowser = ({ onSelectFolder, onBack }) => {
-  const [currentPath, setCurrentPath] = useState('/mnt');
+  const [currentPath, setCurrentPath] = useState(null);
   const [folders, setFolders] = useState([]);
   const [parentPath, setParentPath] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [breadcrumbs, setBreadcrumbs] = useState([]);
+
+  /**
+   * Initialize with home directory on mount
+   */
+  useEffect(() => {
+    const getHomeDirectory = async () => {
+      try {
+        const response = await fetch(`${API_URL}/fs/home`);
+        if (response.ok) {
+          const data = await response.json();
+          setCurrentPath(data.path);
+          setLoading(false);
+        } else {
+          // Fallback
+          setCurrentPath('C:\\Users');
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Failed to get home directory:', err);
+        setCurrentPath('C:\\Users');
+        setLoading(false);
+      }
+    };
+
+    getHomeDirectory();
+  }, []);
 
   /**
    * Fetch folder contents from backend
@@ -61,30 +88,51 @@ const FolderBrowser = ({ onSelectFolder, onBack }) => {
    * Generate breadcrumb navigation from path
    */
   const generateBreadcrumbs = useCallback((path) => {
-    const parts = path.split('/').filter(Boolean);
     const crumbs = [];
     
-    // Add root
-    crumbs.push({ label: '/', path: '/' });
+    // Detect OS and split accordingly
+    const isWindows = path.includes('\\');
+    const separator = isWindows ? '\\' : '/';
     
-    // Add each path segment
-    let currentFullPath = '';
-    parts.forEach((part, idx) => {
-      currentFullPath += '/' + part;
-      crumbs.push({
-        label: part,
-        path: currentFullPath
+    if (isWindows) {
+      // Windows: C:\Users\Bob
+      const parts = path.split('\\').filter(Boolean);
+      crumbs.push({ label: parts[0] + '\\', path: parts[0] + '\\' });
+      
+      let currentPath = parts[0] + '\\';
+      for (let i = 1; i < parts.length; i++) {
+        currentPath += parts[i];
+        crumbs.push({
+          label: parts[i],
+          path: currentPath
+        });
+        if (i < parts.length - 1) currentPath += '\\';
+      }
+    } else {
+      // Linux/Mac: /home/user
+      crumbs.push({ label: '/', path: '/' });
+      
+      const parts = path.split('/').filter(Boolean);
+      let currentPath = '';
+      parts.forEach((part, idx) => {
+        currentPath += '/' + part;
+        crumbs.push({
+          label: part,
+          path: currentPath
+        });
       });
-    });
+    }
     
     setBreadcrumbs(crumbs);
   }, []);
 
   /**
-   * Initialize on mount and when path changes
+   * Watch for currentPath changes and fetch folder contents
    */
   useEffect(() => {
-    browseFolders(currentPath);
+    if (currentPath) {
+      browseFolders(currentPath);
+    }
   }, [currentPath, browseFolders]);
 
   /**
@@ -150,9 +198,11 @@ const FolderBrowser = ({ onSelectFolder, onBack }) => {
       )}
 
       {/* Current path display */}
-      <div className="current-path-display">
-        <small>{currentPath}</small>
-      </div>
+      {currentPath && (
+        <div className="current-path-display">
+          <small>{currentPath}</small>
+        </div>
+      )}
 
       {/* Error message display */}
       {error && (

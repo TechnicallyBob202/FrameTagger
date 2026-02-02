@@ -11,13 +11,14 @@ from pathlib import Path
 import os
 import asyncio
 import logging
+import platform
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Database setup
-DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+pymysql://root:frametagger@mariadb:3306/frametagger')
+DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+pymysql://root:frametagger@localhost:3306/frametagger')
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=10, max_overflow=20)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -109,7 +110,7 @@ class ImageListSchema(BaseModel):
     class Config:
         from_attributes = True
 
-# NEW: File browser models
+# File browser models
 class FsItemSchema(BaseModel):
     """Represents a file or folder in the file system"""
     name: str
@@ -133,6 +134,11 @@ class FsBrowseResponseSchema(BaseModel):
     class Config:
         from_attributes = True
 
+class HomeDirectorySchema(BaseModel):
+    """Response for home directory query"""
+    path: str
+    os: str  # 'windows', 'linux', 'darwin', etc.
+
 # FastAPI app
 app = FastAPI(title="FrameTagger")
 
@@ -148,13 +154,21 @@ app.add_middleware(
 UPLOAD_DIR = Path("./uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Allowed root paths (configure these based on your system)
-ALLOWED_ROOT_PATHS = [
-    Path("/mnt"),
-    Path("/media"),
-    Path("/home"),
-    Path(os.path.expanduser("~")),
-]
+# Allowed root paths - dynamically set based on OS
+def get_allowed_root_paths():
+    """Get allowed root paths based on operating system"""
+    if platform.system() == "Windows":
+        return [
+            Path("C:\\"),
+            Path(os.path.expanduser("~")),
+        ]
+    else:  # Linux, macOS, etc.
+        return [
+            Path("/"),
+            Path("/home"),
+            Path("/mnt"),
+            Path(os.path.expanduser("~")),
+        ]
 
 def get_db():
     db = SessionLocal()
@@ -163,14 +177,14 @@ def get_db():
     finally:
         db.close()
 
-# NEW: File system utility functions
+# File system utility functions
 def validate_path(requested_path: str, allowed_roots: List[Path] = None) -> Path:
     """
     Validate that a requested path is safe to access.
     Prevents directory traversal attacks.
     """
     if allowed_roots is None:
-        allowed_roots = ALLOWED_ROOT_PATHS
+        allowed_roots = get_allowed_root_paths()
     
     try:
         # Convert to absolute path
@@ -364,7 +378,21 @@ async def startup_event():
     finally:
         db.close()
 
-# NEW: File system browsing endpoint
+# Home directory endpoint
+@app.get("/api/fs/home", response_model=HomeDirectorySchema)
+async def get_home_directory():
+    """
+    Get the user's home directory (platform-aware).
+    Returns the path and OS type so frontend can adapt.
+    """
+    home = Path.home()
+    os_name = platform.system().lower()
+    return HomeDirectorySchema(
+        path=str(home),
+        os=os_name
+    )
+
+# File system browsing endpoint
 @app.get("/api/fs/browse", response_model=FsBrowseResponseSchema)
 async def browse_files(
     path: str = Query("/mnt", description="Path to browse"),
@@ -379,7 +407,7 @@ async def browse_files(
     - Hides symlinks
     - Hides hidden files
     """
-    validated_path = validate_path(path)
+    validated_path = validate_path(path, get_allowed_root_paths())
     return await browse_directory(validated_path, max_items)
 
 # Folder endpoints
@@ -391,7 +419,7 @@ def get_folders(db: Session = Depends(get_db)):
 def add_folder(folder: FolderSchema, db: Session = Depends(get_db)):
     # Validate folder path
     try:
-        validated_path = validate_path(folder.path)
+        validated_path = validate_path(folder.path, get_allowed_root_paths())
         if not validated_path.is_dir():
             raise HTTPException(status_code=400, detail="Path is not a directory")
     except HTTPException:
@@ -598,4 +626,4 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
