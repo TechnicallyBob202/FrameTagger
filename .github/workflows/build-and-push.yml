@@ -32,19 +32,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/frametagger-backend:latest
-            ${{ secrets.DOCKER_USERNAME }}/frametagger-backend:${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/frametagger-backend:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/frametagger-backend:buildcache,mode=max
+            ${{ secrets.DOCKER_USERNAME }}/frametagger:latest
+            ${{ secrets.DOCKER_USERNAME }}/frametagger:${{ github.sha }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/frametagger:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/frametagger:buildcache,mode=max
       
-      - name: Build and push frontend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: true
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/frametagger-frontend:latest
-            ${{ secrets.DOCKER_USERNAME }}/frametagger-frontend:${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/frametagger-frontend:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/frametagger-frontend:buildcache,mode=max
