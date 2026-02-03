@@ -3,13 +3,129 @@ import './App.css'
 
 const API_URL = 'http://localhost:8003/api'
 
+function ImageModal({ image, tags, onClose, onTagImage, onUntagImage, onCreateTag }) {
+  const [tagSearch, setTagSearch] = useState('')
+  
+  if (!image) return null
+  
+  const availableTags = tags.filter(tag => !image.tags.some(t => t.id === tag.id))
+  const searchQuery = tagSearch.toLowerCase().trim()
+  const filteredTags = searchQuery 
+    ? tags.filter(tag => tag.name.toLowerCase().includes(searchQuery))
+    : []
+  const tagExists = tags.some(tag => tag.name.toLowerCase() === searchQuery)
+  const canCreateTag = searchQuery.length > 0 && !tagExists
+
+  async function handleAddTag(tagId) {
+    await onTagImage(image.id, tagId)
+    setTagSearch('')
+  }
+
+  async function handleCreateTag(name) {
+    await onCreateTag(name)
+  }
+
+  const dateAdded = new Date(image.date_added).toLocaleDateString()
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="image-modal" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose}>✕</button>
+        
+        <div className="image-modal-content">
+          <div className="modal-image-preview">
+            <img src={`${API_URL}/images/${image.id}/preview`} alt={image.name} />
+          </div>
+
+          <div className="modal-image-info">
+            <div className="modal-properties">
+              <div className="property">
+                <span className="property-label">Filename</span>
+                <span className="property-value">{image.name}</span>
+              </div>
+              
+              <div className="property">
+                <span className="property-label">Folder</span>
+                <span className="property-value">{image.folder_path}</span>
+              </div>
+              
+              <div className="property">
+                <span className="property-label">Date Added</span>
+                <span className="property-value">{dateAdded}</span>
+              </div>
+            </div>
+
+            <div className="modal-tags-section">
+              <div className="modal-tag-search">
+                <input
+                  type="text"
+                  placeholder="Search or create tags..."
+                  value={tagSearch}
+                  onChange={(e) => setTagSearch(e.target.value)}
+                  className="modal-tag-input"
+                />
+                
+                {tagSearch && (
+                  <div className="modal-tag-dropdown">
+                    {filteredTags.length > 0 && (
+                      <div>
+                        {filteredTags.map(tag => (
+                          <button
+                            key={tag.id}
+                            className="modal-tag-option"
+                            onClick={() => handleAddTag(tag.id)}
+                          >
+                            + {tag.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {canCreateTag && (
+                      <button
+                        className="modal-tag-create"
+                        onClick={() => handleCreateTag(tagSearch)}
+                      >
+                        + Create "{tagSearch}"
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-current-tags">
+                {image.tags.length === 0 ? (
+                  <p className="no-tags">No tags yet</p>
+                ) : (
+                  <div className="tags-list">
+                    {image.tags.map(tag => (
+                      <span key={tag.id} className="tag-badge-modal">
+                        {tag.name}
+                        <button
+                          className="tag-remove"
+                          onClick={() => onUntagImage(image.id, tag.id)}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [images, setImages] = useState([])
   const [tags, setTags] = useState([])
   const [folders, setFolders] = useState([])
   const [selectedImage, setSelectedImage] = useState(null)
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
-  const [tagSearch, setTagSearch] = useState('')
   
   // Navigation state
   const [activeSection, setActiveSection] = useState('images')
@@ -31,6 +147,9 @@ function App() {
   const [showTagModal, setShowTagModal] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [tagPreview, setTagPreview] = useState(null)
+  
+  // Rescan state
+  const [isScanning, setIsScanning] = useState(false)
 
   // Load data on mount
   useEffect(() => {
@@ -82,10 +201,25 @@ function App() {
     }
   }
 
+  async function rescanLibrary() {
+    setIsScanning(true)
+    try {
+      const response = await fetch(`${API_URL}/rescan`, { method: "POST" })
+      const data = await response.json()
+      if (!data.error) {
+        await loadImages()
+      }
+    } catch (err) {
+      console.error("Rescan failed:", err)
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
   async function browseFolders(path) {
     setFolderLoading(true)
     try {
-      const response = await fetch(`${API_URL}/browse-folders?path=${encodeURIComponent(path)}`)
+      const response = await fetch(`${API_URL}/folders/browse?path=${encodeURIComponent(path)}`)
       const data = await response.json()
       if (!data.error) {
         setCurrentPath(data.current_path)
@@ -129,46 +263,6 @@ function App() {
     }
   }
 
-  async function addTagToImage(tagId) {
-    if (!selectedImage) return
-    try {
-      const response = await fetch(
-        `${API_URL}/images/tag?image_path=${encodeURIComponent(selectedImage.path)}&tag_id=${tagId}`,
-        { method: 'POST' }
-      )
-      const data = await response.json()
-      if (!data.error) {
-        const tagToAdd = tags.find(t => t.id === tagId)
-        if (tagToAdd) {
-          setSelectedImage({
-            ...selectedImage,
-            tags: [...selectedImage.tags, tagToAdd]
-          })
-        }
-        await loadImages()
-      }
-    } catch (err) {
-      console.error('Error:', err.message)
-    }
-  }
-
-  async function removeTagFromImage(tagId) {
-    if (!selectedImage) return
-    try {
-      await fetch(
-        `${API_URL}/images/tag?image_path=${encodeURIComponent(selectedImage.path)}&tag_id=${tagId}`,
-        { method: 'DELETE' }
-      )
-      setSelectedImage({
-        ...selectedImage,
-        tags: selectedImage.tags.filter(t => t.id !== tagId)
-      })
-      await loadImages()
-    } catch (err) {
-      console.error('Error:', err.message)
-    }
-  }
-
   async function createTag(name) {
     try {
       const response = await fetch(
@@ -177,27 +271,13 @@ function App() {
       )
       const data = await response.json()
       if (!data.error) {
-        const tagsResponse = await fetch(`${API_URL}/tags`)
-        const tagsData = await tagsResponse.json()
-        const newTags = tagsData.tags || []
-        setTags(newTags)
-        
-        if (selectedImage) {
-          const newTag = newTags.find(t => t.name.toLowerCase() === name.trim().toLowerCase())
-          if (newTag) {
-            await addTagToImage(newTag.id)
-          }
-        }
-        setTagSearch('')
+        await loadTags()
+        return true
       }
     } catch (err) {
       console.error('Error:', err.message)
     }
-  }
-
-  async function addTagAndClear(tagId) {
-    await addTagToImage(tagId)
-    setTagSearch('')
+    return false
   }
 
   async function handleCreateTags() {
@@ -234,29 +314,64 @@ function App() {
   }
 
   // Multi-select functions
-  function toggleSelectImage(imagePath) {
+  function toggleSelectImage(imageId) {
     const newSelected = new Set(selectedImages)
-    if (newSelected.has(imagePath)) {
-      newSelected.delete(imagePath)
+    if (newSelected.has(imageId)) {
+      newSelected.delete(imageId)
     } else {
-      newSelected.add(imagePath)
+      newSelected.add(imageId)
     }
     setSelectedImages(newSelected)
   }
 
   function selectAllImages() {
-    setSelectedImages(new Set(filteredImages.map(img => img.path)))
+    setSelectedImages(new Set(filteredImages.map(img => img.id)))
   }
 
   function clearSelection() {
     setSelectedImages(new Set())
   }
 
+  async function addTagToImage(imageId, tagId) {
+    try {
+      const response = await fetch(
+        `${API_URL}/images/${imageId}/tag?tag_id=${tagId}`,
+        { method: 'POST' }
+      )
+      const data = await response.json()
+      if (!data.error) {
+        await loadImages()
+        if (selectedImage?.id === imageId) {
+          const updated = await fetch(`${API_URL}/images/${imageId}`).then(r => r.json())
+          setSelectedImage(updated)
+        }
+      }
+    } catch (err) {
+      console.error('Error:', err.message)
+    }
+  }
+
+  async function removeTagFromImage(imageId, tagId) {
+    try {
+      await fetch(
+        `${API_URL}/images/${imageId}/tag?tag_id=${tagId}`,
+        { method: 'DELETE' }
+      )
+      await loadImages()
+      if (selectedImage?.id === imageId) {
+        const updated = await fetch(`${API_URL}/images/${imageId}`).then(r => r.json())
+        setSelectedImage(updated)
+      }
+    } catch (err) {
+      console.error('Error:', err.message)
+    }
+  }
+
   async function addTagToSelected(tagId) {
     try {
-      for (const imagePath of selectedImages) {
+      for (const imageId of selectedImages) {
         await fetch(
-          `${API_URL}/images/tag?image_path=${encodeURIComponent(imagePath)}&tag_id=${tagId}`,
+          `${API_URL}/images/${imageId}/tag?tag_id=${tagId}`,
           { method: 'POST' }
         )
       }
@@ -269,9 +384,9 @@ function App() {
 
   async function removeTagFromSelected(tagId) {
     try {
-      for (const imagePath of selectedImages) {
+      for (const imageId of selectedImages) {
         await fetch(
-          `${API_URL}/images/tag?image_path=${encodeURIComponent(imagePath)}&tag_id=${tagId}`,
+          `${API_URL}/images/${imageId}/tag?tag_id=${tagId}`,
           { method: 'DELETE' }
         )
       }
@@ -294,8 +409,8 @@ function App() {
   function getCommonTags() {
     if (selectedImages.size === 0) return []
     
-    const selectedImageList = Array.from(selectedImages).map(path => 
-      images.find(img => img.path === path)
+    const selectedImageList = Array.from(selectedImages).map(id => 
+      images.find(img => img.id === id)
     ).filter(img => img)
     
     if (selectedImageList.length === 0) return []
@@ -310,7 +425,6 @@ function App() {
   }
 
   // Filter logic for tag search
-  const availableTags = tags.filter(tag => !selectedImage?.tags.some(t => t.id === tag.id))
   const batchSearchQuery = batchTagSearch.toLowerCase().trim()
   const batchFilteredTags = batchSearchQuery 
     ? tags.filter(tag => tag.name.toLowerCase().includes(batchSearchQuery))
@@ -489,27 +603,33 @@ function App() {
               </div>
             )}
 
-            {/* Images Grid/List */}
+            {/* Images Grid */}
             <div className={`images-grid-with-select view-${viewMode}`}>
               {filteredImages.map((img) => (
                 <div 
-                  key={img.path}
-                  className={`image-card-wrapper ${selectedImages.has(img.path) ? 'selected' : ''}`}
+                  key={img.id}
+                  className={`image-card-wrapper ${selectedImages.has(img.id) ? 'selected' : ''}`}
                 >
                   <input
                     type="checkbox"
                     className="image-checkbox"
-                    checked={selectedImages.has(img.path)}
-                    onChange={() => toggleSelectImage(img.path)}
+                    checked={selectedImages.has(img.id)}
+                    onChange={() => toggleSelectImage(img.id)}
                   />
                   <div 
-                    className={`image-card ${selectedImage?.path === img.path ? 'selected' : ''}`}
+                    className="image-card"
                     onClick={() => setSelectedImage(img)}
                   >
+                    <img 
+                      src={`${API_URL}/images/${img.id}/thumbnail`} 
+                      alt={img.name}
+                      className="image-thumbnail"
+                    />
                     <p>{img.name}</p>
                     {img.tags.length > 0 && (
                       <div className="image-tags">
-                        {img.tags.map(t => <span key={t.id}>#{t.name}</span>)}
+                        {img.tags.slice(0, 3).map(t => <span key={t.id}>#{t.name}</span>)}
+                        {img.tags.length > 3 && <span>+{img.tags.length - 3}</span>}
                       </div>
                     )}
                   </div>
@@ -528,9 +648,18 @@ function App() {
         {activeSection === 'library' && (
           <section className="content-section">
             <h2>Library</h2>
-            <button className="btn-primary" onClick={() => setShowFolderModal(true)}>
-              + Add Folder
-            </button>
+            <div className="library-controls">
+              <button className="btn-primary" onClick={() => setShowFolderModal(true)}>
+                + Add Folder
+              </button>
+              <button 
+                className="btn-secondary" 
+                onClick={rescanLibrary}
+                disabled={isScanning}
+              >
+                {isScanning ? '⟳ Scanning...' : '⟳ Rescan Library'}
+              </button>
+            </div>
             
             <div className="folders-list">
               {folders.length === 0 ? (
@@ -624,103 +753,15 @@ function App() {
         )}
       </main>
 
-      {/* Details Panel */}
-      {selectedImage && (
-        <aside className="details-panel">
-          <div className="details-header">
-            <h3>{selectedImage.name}</h3>
-            <button onClick={() => setSelectedImage(null)}>✕</button>
-          </div>
-          
-          <div className="details-content">
-            <div style={{ marginBottom: '20px' }}>
-              <input
-                type="text"
-                placeholder="Search or create tags..."
-                value={tagSearch}
-                onChange={(e) => setTagSearch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  fontSize: '14px',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '4px',
-                  background: 'var(--bg-tertiary)',
-                  color: 'var(--text-primary)',
-                  boxSizing: 'border-box'
-                }}
-              />
-              
-              {tagSearch && (
-                <div style={{ marginTop: '12px' }}>
-                  {availableTags.filter(tag => tag.name.toLowerCase().includes(tagSearch.toLowerCase())).length > 0 ? (
-                    <div>
-                      {availableTags.filter(tag => tag.name.toLowerCase().includes(tagSearch.toLowerCase())).map(tag => (
-                        <button
-                          key={tag.id}
-                          onClick={() => addTagAndClear(tag.id)}
-                          style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            padding: '8px 12px',
-                            marginBottom: '4px',
-                            background: 'var(--color-accent)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '14px'
-                          }}
-                        >
-                          + #{tag.name}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  
-                  {!tags.some(tag => tag.name.toLowerCase() === tagSearch.toLowerCase().trim()) && tagSearch.trim().length > 0 && (
-                    <button
-                      onClick={() => createTag(tagSearch)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        marginTop: availableTags.filter(tag => tag.name.toLowerCase().includes(tagSearch.toLowerCase())).length > 0 ? '4px' : '0',
-                        background: '#1a6b2a',
-                        color: 'white',
-                        border: '1px solid #2a8a3a',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '14px'
-                      }}
-                    >
-                      + Create "{tagSearch}"
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            <div>
-              <strong>Tags:</strong>
-              <div style={{ marginTop: '8px', marginBottom: '16px' }}>
-                {selectedImage.tags.map(tag => (
-                  <span key={tag.id} style={{ display: 'inline-block', marginRight: '8px', marginBottom: '8px' }}>
-                    <span style={{ background: 'var(--color-accent)', color: 'white', padding: '4px 8px', borderRadius: '4px' }}>
-                      {tag.name}
-                      <button 
-                        onClick={() => removeTagFromImage(tag.id)}
-                        style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', marginLeft: '4px' }}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </aside>
-      )}
+      {/* Image Modal */}
+      <ImageModal 
+        image={selectedImage}
+        tags={tags}
+        onClose={() => setSelectedImage(null)}
+        onTagImage={addTagToImage}
+        onUntagImage={removeTagFromImage}
+        onCreateTag={createTag}
+      />
 
       {/* Folder Browser Modal */}
       {showFolderModal && (

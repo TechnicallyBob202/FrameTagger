@@ -1,7 +1,10 @@
 from fastapi import FastAPI
+from starlette.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
+from PIL import Image
 import sqlite3
+import io
 from datetime import datetime
 
 app = FastAPI()
@@ -36,13 +39,24 @@ def init_db():
     ''')
     
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT UNIQUE NOT NULL,
+            folder_id INTEGER NOT NULL,
+            date_added TEXT NOT NULL,
+            FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE
+        )
+    ''')
+    
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS image_tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            image_path TEXT NOT NULL,
+            image_id INTEGER NOT NULL,
             tag_id INTEGER NOT NULL,
             created_at TEXT NOT NULL,
+            FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE,
             FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
-            UNIQUE(image_path, tag_id)
+            UNIQUE(image_id, tag_id)
         )
     ''')
     
@@ -110,27 +124,27 @@ def delete_tag(tag_id):
     conn.commit()
     conn.close()
 
-def get_image_tags(image_path):
+def get_image_tags(image_id):
     """Get all tags for an image"""
     conn = sqlite3.connect('frametagger.db')
     cursor = conn.cursor()
     cursor.execute('''
         SELECT t.id, t.name FROM tags t
         JOIN image_tags it ON t.id = it.tag_id
-        WHERE it.image_path = ?
+        WHERE it.image_id = ?
         ORDER BY t.name
-    ''', (image_path,))
+    ''', (image_id,))
     results = cursor.fetchall()
     conn.close()
     return [{"id": r[0], "name": r[1]} for r in results]
 
-def add_tag_to_image(image_path, tag_id):
+def add_tag_to_image(image_id, tag_id):
     """Add a tag to an image"""
     conn = sqlite3.connect('frametagger.db')
     cursor = conn.cursor()
     try:
-        cursor.execute('INSERT INTO image_tags (image_path, tag_id, created_at) VALUES (?, ?, ?)',
-                      (image_path, tag_id, datetime.now().isoformat()))
+        cursor.execute('INSERT INTO image_tags (image_id, tag_id, created_at) VALUES (?, ?, ?)',
+                      (image_id, tag_id, datetime.now().isoformat()))
         conn.commit()
         conn.close()
         return True
@@ -138,16 +152,102 @@ def add_tag_to_image(image_path, tag_id):
         conn.close()
         return False
 
-def remove_tag_from_image(image_path, tag_id):
+def remove_tag_from_image(image_id, tag_id):
     """Remove a tag from an image"""
     conn = sqlite3.connect('frametagger.db')
     cursor = conn.cursor()
-    cursor.execute('DELETE FROM image_tags WHERE image_path = ? AND tag_id = ?',
-                  (image_path, tag_id))
+    cursor.execute('DELETE FROM image_tags WHERE image_id = ? AND tag_id = ?',
+                  (image_id, tag_id))
     conn.commit()
     conn.close()
 
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'}
+def get_image_by_id(image_id):
+    """Get image info by ID"""
+    conn = sqlite3.connect('frametagger.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, path, folder_id, date_added FROM images WHERE id = ?', (image_id,))
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        return {
+            "id": result[0],
+            "path": result[1],
+            "folder_id": result[2],
+            "date_added": result[3]
+        }
+    return None
+
+def get_image_info(image_id):
+    """Get full image info including tags"""
+    conn = sqlite3.connect('frametagger.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT i.id, i.path, i.folder_id, i.date_added, f.path as folder_path
+        FROM images i
+        JOIN folders f ON i.folder_id = f.id
+        WHERE i.id = ?
+    ''', (image_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result:
+        return None
+    
+    file_path = Path(result[1])
+    return {
+        "id": result[0],
+        "name": file_path.name,
+        "path": result[1],
+        "folder_id": result[2],
+        "folder_path": result[4],
+        "date_added": result[3],
+        "tags": get_image_tags(image_id)
+    }
+
+# IMAGE FUNCTIONS
+def add_image_to_db(path, folder_id):
+    """Add image to database if not already there"""
+    conn = sqlite3.connect('frametagger.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT INTO images (path, folder_id, date_added) VALUES (?, ?, ?)',
+                      (path, folder_id, datetime.now().isoformat()))
+        conn.commit()
+        image_id = cursor.lastrowid
+        conn.close()
+        return image_id
+    except sqlite3.IntegrityError:
+        # Image already in DB, get its ID
+        cursor.execute('SELECT id FROM images WHERE path = ?', (path,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+
+def rescan_library():
+    """Rescan all folders and add new images"""
+    folders = get_folders_from_db()
+    added_count = 0
+    
+    IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'}
+    
+    for folder in folders:
+        folder_path = Path(folder["path"])
+        if not folder_path.exists():
+            continue
+        
+        try:
+            for file_path in folder_path.rglob('*'):
+                try:
+                    if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS:
+                        image_id = add_image_to_db(str(file_path), folder["id"])
+                        if image_id:
+                            added_count += 1
+                except (PermissionError, Exception):
+                    pass
+        except PermissionError:
+            pass
+    
+    return added_count
 
 # API ENDPOINTS
 
@@ -196,6 +296,8 @@ def add_folder(path: str):
             return {"error": "Path is not a directory"}
         
         if add_folder_to_db(path):
+            # Immediately rescan this folder
+            rescan_library()
             return {"status": "ok", "path": path}
         else:
             return {"error": "Folder already added"}
@@ -253,62 +355,136 @@ def remove_tag(tag_id: int):
 
 @app.get("/api/images")
 def get_images():
+    """Return all images from database"""
     try:
-        folders = get_folders_from_db()
-        if not folders:
-            return {"total_images": 0, "images": []}
+        conn = sqlite3.connect('frametagger.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT i.id, i.path, i.folder_id, i.date_added, f.path as folder_path
+            FROM images i
+            JOIN folders f ON i.folder_id = f.id
+            ORDER BY i.id
+        ''')
+        results = cursor.fetchall()
+        conn.close()
         
         all_images = []
-        
-        for folder in folders:
-            folder_path = Path(folder["path"])
-            if not folder_path.exists():
-                continue
-            
-            try:
-                for file_path in folder_path.rglob('*'):
-                    try:
-                        if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS:
-                            stat = file_path.stat()
-                            all_images.append({
-                                "name": file_path.name,
-                                "path": str(file_path),
-                                "folder_id": folder["id"],
-                                "folder_path": folder["path"],
-                                "size": stat.st_size,
-                                "extension": file_path.suffix.lower(),
-                                "date_modified": stat.st_mtime,
-                                "tags": get_image_tags(str(file_path))
-                            })
-                    except PermissionError:
-                        pass
-            except PermissionError:
-                pass
+        for r in results:
+            file_path = Path(r[1])
+            all_images.append({
+                "id": r[0],
+                "name": file_path.name,
+                "path": r[1],
+                "folder_id": r[2],
+                "folder_path": r[4],
+                "date_added": r[3],
+                "tags": get_image_tags(r[0])
+            })
         
         return {
             "total_images": len(all_images),
-            "library_folders": len(folders),
+            "library_folders": len(get_folders_from_db()),
             "images": all_images
         }
     except Exception as e:
         return {"error": str(e)}
 
-
-
-@app.post("/api/images/tag")
-def tag_image(image_path: str, tag_id: int):
+@app.post("/api/rescan")
+def rescan():
+    """Rescan all folders for new images"""
     try:
-        if add_tag_to_image(image_path, tag_id):
+        added = rescan_library()
+        return {"status": "ok", "added": added}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/images/{image_id}")
+def get_image(image_id: int):
+    """Get image details"""
+    try:
+        img_info = get_image_info(image_id)
+        if img_info:
+            return img_info
+        return {"error": "Image not found"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/images/{image_id}/thumbnail")
+def get_thumbnail(image_id: int):
+    """Get 100x100 thumbnail"""
+    try:
+        img = get_image_by_id(image_id)
+        if not img:
+            return {"error": "Image not found"}
+        
+        file_path = Path(img["path"])
+        if not file_path.exists():
+            return {"error": "File not found"}
+        
+        image = Image.open(file_path)
+        image.thumbnail((100, 100), Image.Resampling.LANCZOS)
+        
+        img_bytes = io.BytesIO()
+        image.save(img_bytes, format='JPEG', quality=85)
+        img_bytes.seek(0)
+        
+        return StreamingResponse(img_bytes, media_type="image/jpeg")
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/images/{image_id}/preview")
+def get_preview(image_id: int):
+    """Get 600x600 preview"""
+    try:
+        img = get_image_by_id(image_id)
+        if not img:
+            return {"error": "Image not found"}
+        
+        file_path = Path(img["path"])
+        if not file_path.exists():
+            return {"error": "File not found"}
+        
+        image = Image.open(file_path)
+        image.thumbnail((600, 600), Image.Resampling.LANCZOS)
+        
+        img_bytes = io.BytesIO()
+        image.save(img_bytes, format='JPEG', quality=90)
+        img_bytes.seek(0)
+        
+        return StreamingResponse(img_bytes, media_type="image/jpeg")
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/images/{image_id}/file")
+def get_file(image_id: int):
+    """Get original image file"""
+    try:
+        img = get_image_by_id(image_id)
+        if not img:
+            return {"error": "Image not found"}
+        
+        file_path = Path(img["path"])
+        if not file_path.exists():
+            return {"error": "File not found"}
+        
+        return FileResponse(file_path)
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/images/{image_id}/tag")
+def tag_image(image_id: int, tag_id: int):
+    try:
+        if add_tag_to_image(image_id, tag_id):
             return {"status": "ok"}
         else:
             return {"error": "Tag already applied"}
     except Exception as e:
         return {"error": str(e)}
 
-@app.delete("/api/images/tag")
-def untag_image(image_path: str, tag_id: int):
+@app.delete("/api/images/{image_id}/tag")
+def untag_image(image_id: int, tag_id: int):
     try:
-        remove_tag_from_image(image_path, tag_id)
+        remove_tag_from_image(image_id, tag_id)
         return {"status": "ok"}
     except Exception as e:
         return {"error": str(e)}
