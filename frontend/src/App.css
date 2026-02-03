@@ -549,6 +549,11 @@ body {
   backdrop-filter: blur(2px);
 }
 
+.modal-overlay:has(.modal-confirm) {
+  justify-content: flex-end;
+  padding-right: 32px;
+}
+
 .modal {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -1343,23 +1348,24 @@ input[type="radio"] {
   border: 1px solid var(--border-color);
   border-radius: 16px;
   box-shadow: var(--shadow-xl);
-  padding: 32px;
-  max-width: 400px;
+  padding: 20px;
+  max-width: 280px;
+  width: 280px;
   animation: slideUp 0.3s ease-out;
 }
 
 .modal-confirm h3 {
-  margin: 0 0 16px 0;
-  font-size: 18px;
+  margin: 0 0 12px 0;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .modal-confirm p {
-  margin: 0 0 24px 0;
+  margin: 0 0 16px 0;
   color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .modal-confirm strong {
@@ -1369,15 +1375,15 @@ input[type="radio"] {
 
 .modal-confirm-buttons {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
 .modal-confirm-buttons button {
-  padding: 10px 20px;
+  padding: 8px 12px;
   border: none;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
