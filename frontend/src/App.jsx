@@ -492,28 +492,6 @@ function App() {
     }
   }
 
-  async function downloadFilteredImages() {
-    if (sortedImages.length === 0) return
-    try {
-      const response = await fetch(`${API_URL}/images/download-zip`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_ids: sortedImages.map(img => img.id) })
-      })
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'images.zip'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (err) {
-      console.error('Error:', err.message)
-    }
-  }
-
   // Multi-select functions
   function toggleSelectImage(imageId) {
     const newSelected = new Set(selectedImages)
@@ -769,12 +747,6 @@ function App() {
               {folders.length > 0 && (
                 <button className="btn-primary" onClick={() => setShowUploadModal(true)}>
                   ↑ Upload
-                </button>
-              )}
-              
-              {sortedImages.length > 0 && (
-                <button className="btn-secondary" onClick={downloadFilteredImages}>
-                  ↓ Download All
                 </button>
               )}
               
