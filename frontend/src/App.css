@@ -372,7 +372,7 @@ body {
 
 /* ===== FOLDERS & TAGS LISTS ===== */
 .folders-list,
-.tags-list {
+.folders-list {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -380,7 +380,10 @@ body {
 }
 
 .tags-list {
-  max-width: 500px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 24px;
 }
 
 .folder-item,
@@ -388,11 +391,23 @@ body {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   transition: all 0.2s ease;
+}
+
+.folder-item {
+  padding: 16px;
+}
+
+.tag-item {
+  padding: 10px 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 60px;
+  justify-content: space-between;
 }
 
 .folder-item:hover,
@@ -408,6 +423,20 @@ body {
   color: var(--text-primary);
   flex: 1;
   word-break: break-all;
+}
+
+.tag-item span {
+  font-size: 13px;
+  font-weight: 500;
+  flex: 0;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.tag-item button {
+  width: 100%;
+  padding: 8px;
+  font-size: 12px;
 }
 
 /* ===== LIBRARY & TAGS CONTROLS ===== */
