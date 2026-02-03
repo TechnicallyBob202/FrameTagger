@@ -162,6 +162,34 @@ def remove_tag_from_image(image_id, tag_id):
     conn.commit()
     conn.close()
 
+def delete_image_from_db(image_id):
+    """Remove image from database only (keep file)"""
+    conn = sqlite3.connect('frametagger.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM images WHERE id = ?', (image_id,))
+    conn.commit()
+    conn.close()
+
+def delete_image_completely(image_id):
+    """Remove image from database and delete the file"""
+    img = get_image_by_id(image_id)
+    if not img:
+        return False
+    
+    file_path = Path(img["path"])
+    
+    # Delete from database first
+    delete_image_from_db(image_id)
+    
+    # Then delete the file
+    try:
+        if file_path.exists():
+            file_path.unlink()
+        return True
+    except Exception:
+        # DB deletion succeeded even if file deletion failed
+        return True
+
 def get_image_by_id(image_id):
     """Get image info by ID"""
     conn = sqlite3.connect('frametagger.db')
@@ -486,6 +514,24 @@ def tag_image(image_id: int, tag_id: int):
 def untag_image(image_id: int, tag_id: int):
     try:
         remove_tag_from_image(image_id, tag_id)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.delete("/api/images/{image_id}/remove")
+def remove_image(image_id: int):
+    """Remove image from FrameFolio (database only, keeps file)"""
+    try:
+        delete_image_from_db(image_id)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.delete("/api/images/{image_id}/delete")
+def delete_image(image_id: int):
+    """Delete image completely (database and file)"""
+    try:
+        delete_image_completely(image_id)
         return {"status": "ok"}
     except Exception as e:
         return {"error": str(e)}

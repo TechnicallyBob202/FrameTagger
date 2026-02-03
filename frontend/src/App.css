@@ -259,6 +259,44 @@ body {
   transform: translateY(-2px);
 }
 
+.btn-delete-secondary {
+  padding: 10px 16px;
+  border: 1px solid rgba(231, 76, 60, 0.5);
+  background: transparent;
+  color: var(--color-danger);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.btn-delete-secondary:hover {
+  background: rgba(231, 76, 60, 0.1);
+  border-color: var(--color-danger);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-delete-danger {
+  padding: 10px 16px;
+  border: none;
+  background: var(--color-danger);
+  color: white;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.btn-delete-danger:hover {
+  background: var(--color-danger-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
 /* ===== IMAGES GRID ===== */
 .images-grid {
   display: grid;
@@ -1028,12 +1066,30 @@ input[type="radio"] {
   opacity: 1;
 }
 
+.modal-delete-actions {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 12px;
+  flex-direction: column;
+}
+
 /* ===== BATCH TAG SECTION ===== */
 .batch-tag-section {
   display: flex;
   flex-direction: column;
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.batch-delete-bar {
+  background: linear-gradient(135deg, rgba(231, 76, 60, 0.1) 0%, rgba(231, 76, 60, 0.05) 100%);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .batch-tag-bar {
@@ -1176,6 +1232,52 @@ input[type="radio"] {
 
 .common-tag-badge:hover .remove-x {
   opacity: 1;
+}
+
+.modal-confirm {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: var(--shadow-xl);
+  padding: 32px;
+  max-width: 400px;
+  animation: slideUp 0.3s ease-out;
+}
+
+.modal-confirm h3 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal-confirm p {
+  margin: 0 0 24px 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.modal-confirm strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.modal-confirm-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modal-confirm-buttons button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
 }
 
 /* ===== RESPONSIVE ===== */

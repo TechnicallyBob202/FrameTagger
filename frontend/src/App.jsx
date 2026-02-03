@@ -6,8 +6,9 @@ import iconBlack from './assets/icons/framefolio_icon_black.png'
 
 const API_URL = `${window.location.origin}/api`
 
-function ImageModal({ image, tags, onClose, onTagImage, onUntagImage, onCreateTag }) {
+function ImageModal({ image, tags, onClose, onTagImage, onUntagImage, onCreateTag, onRemoveImage, onDeleteImage }) {
   const [tagSearch, setTagSearch] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState(null) // 'remove' or 'delete' or null
   
   if (!image) return null
   
@@ -28,96 +29,147 @@ function ImageModal({ image, tags, onClose, onTagImage, onUntagImage, onCreateTa
     await onCreateTag(name)
   }
 
+  async function confirmDelete(type) {
+    if (type === 'remove') {
+      await onRemoveImage(image.id)
+    } else if (type === 'delete') {
+      await onDeleteImage(image.id)
+    }
+    setDeleteConfirm(null)
+    onClose()
+  }
+
   const dateAdded = new Date(image.date_added).toLocaleDateString()
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="image-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="modal-close" onClick={onClose}>✕</button>
-        
-        <div className="modal-image-preview">
-          <img src={`${API_URL}/images/${image.id}/preview`} alt={image.name} />
-        </div>
+    <>
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="image-modal" onClick={(e) => e.stopPropagation()}>
+          <button className="modal-close" onClick={onClose}>✕</button>
+          
+          <div className="modal-image-preview">
+            <img src={`${API_URL}/images/${image.id}/preview`} alt={image.name} />
+          </div>
 
-        <div className="modal-image-info">
-            <div className="modal-properties">
-              <div className="property">
-                <span className="property-label">Filename</span>
-                <span className="property-value">{image.name}</span>
+          <div className="modal-image-info">
+              <div className="modal-properties">
+                <div className="property">
+                  <span className="property-label">Filename</span>
+                  <span className="property-value">{image.name}</span>
+                </div>
+                
+                <div className="property">
+                  <span className="property-label">Folder</span>
+                  <span className="property-value">{image.folder_path}</span>
+                </div>
+                
+                <div className="property">
+                  <span className="property-label">Date Added</span>
+                  <span className="property-value">{dateAdded}</span>
+                </div>
               </div>
-              
-              <div className="property">
-                <span className="property-label">Folder</span>
-                <span className="property-value">{image.folder_path}</span>
-              </div>
-              
-              <div className="property">
-                <span className="property-label">Date Added</span>
-                <span className="property-value">{dateAdded}</span>
+
+              <div className="modal-tags-section">
+                <div className="modal-tag-search">
+                  <input
+                    type="text"
+                    placeholder="Search or create tags..."
+                    value={tagSearch}
+                    onChange={(e) => setTagSearch(e.target.value)}
+                    className="modal-tag-input"
+                  />
+                  
+                  {tagSearch && (
+                    <div className="modal-tag-dropdown">
+                      {filteredTags.length > 0 && (
+                        <div>
+                          {filteredTags.map(tag => (
+                            <button
+                              key={tag.id}
+                              className="modal-tag-option"
+                              onClick={() => handleAddTag(tag.id)}
+                            >
+                              + {tag.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {canCreateTag && (
+                        <button
+                          className="modal-tag-create"
+                          onClick={() => handleCreateTag(tagSearch)}
+                        >
+                          + Create "{tagSearch}"
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="modal-current-tags">
+                  {image.tags.length === 0 ? (
+                    <p className="no-tags">No tags yet</p>
+                  ) : (
+                    <div className="tags-list">
+                      {image.tags.map(tag => (
+                        <span key={tag.id} className="tag-badge-modal">
+                          {tag.name}
+                          <button
+                            className="tag-remove"
+                            onClick={() => onUntagImage(image.id, tag.id)}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
               </div>
             </div>
 
-            <div className="modal-tags-section">
-              <div className="modal-tag-search">
-                <input
-                  type="text"
-                  placeholder="Search or create tags..."
-                  value={tagSearch}
-                  onChange={(e) => setTagSearch(e.target.value)}
-                  className="modal-tag-input"
-                />
-                
-                {tagSearch && (
-                  <div className="modal-tag-dropdown">
-                    {filteredTags.length > 0 && (
-                      <div>
-                        {filteredTags.map(tag => (
-                          <button
-                            key={tag.id}
-                            className="modal-tag-option"
-                            onClick={() => handleAddTag(tag.id)}
-                          >
-                            + {tag.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    
-                    {canCreateTag && (
-                      <button
-                        className="modal-tag-create"
-                        onClick={() => handleCreateTag(tagSearch)}
-                      >
-                        + Create "{tagSearch}"
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="modal-current-tags">
-                {image.tags.length === 0 ? (
-                  <p className="no-tags">No tags yet</p>
-                ) : (
-                  <div className="tags-list">
-                    {image.tags.map(tag => (
-                      <span key={tag.id} className="tag-badge-modal">
-                        {tag.name}
-                        <button
-                          className="tag-remove"
-                          onClick={() => onUntagImage(image.id, tag.id)}
-                        >
-                          ✕
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+            <div className="modal-delete-actions">
+              <button 
+                className="btn-delete-secondary"
+                onClick={() => setDeleteConfirm('remove')}
+              >
+                Remove from FrameFolio
+              </button>
+              <button 
+                className="btn-delete-danger"
+                onClick={() => setDeleteConfirm('delete')}
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal-confirm" onClick={(e) => e.stopPropagation()}>
+            <h3>Confirm {deleteConfirm === 'remove' ? 'Removal' : 'Deletion'}</h3>
+            {deleteConfirm === 'remove' ? (
+              <p>Remove <strong>{image.name}</strong> from FrameFolio? The file will be kept.</p>
+            ) : (
+              <p>Delete <strong>{image.name}</strong> completely? This cannot be undone.</p>
+            )}
+            <div className="modal-confirm-buttons">
+              <button className="btn-secondary" onClick={() => setDeleteConfirm(null)}>
+                Cancel
+              </button>
+              <button 
+                className={deleteConfirm === 'remove' ? 'btn-secondary' : 'btn-danger'}
+                onClick={() => confirmDelete(deleteConfirm)}
+              >
+                {deleteConfirm === 'remove' ? 'Remove' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -417,6 +469,54 @@ function App() {
     }
   }
 
+  async function removeImageFromDb(imageId) {
+    try {
+      const response = await fetch(`${API_URL}/images/${imageId}/remove`, { method: 'DELETE' })
+      if (response.ok) {
+        await loadImages()
+      }
+    } catch (err) {
+      console.error('Error:', err.message)
+    }
+  }
+
+  async function deleteImageCompletely(imageId) {
+    try {
+      const response = await fetch(`${API_URL}/images/${imageId}/delete`, { method: 'DELETE' })
+      if (response.ok) {
+        await loadImages()
+      }
+    } catch (err) {
+      console.error('Error:', err.message)
+    }
+  }
+
+  async function removeSelectedFromDb() {
+    if (!window.confirm(`Remove ${selectedImages.size} image(s) from FrameFolio? Files will be kept.`)) return
+    try {
+      for (const imageId of selectedImages) {
+        await fetch(`${API_URL}/images/${imageId}/remove`, { method: 'DELETE' })
+      }
+      await loadImages()
+      setSelectedImages(new Set())
+    } catch (err) {
+      console.error('Error:', err.message)
+    }
+  }
+
+  async function deleteSelectedCompletely() {
+    if (!window.confirm(`Delete ${selectedImages.size} image(s) completely? This cannot be undone.`)) return
+    try {
+      for (const imageId of selectedImages) {
+        await fetch(`${API_URL}/images/${imageId}/delete`, { method: 'DELETE' })
+      }
+      await loadImages()
+      setSelectedImages(new Set())
+    } catch (err) {
+      console.error('Error:', err.message)
+    }
+  }
+
   // Search and filter
   const filteredImages = images.filter(img => {
     if (!searchQuery.trim()) return true
@@ -587,6 +687,22 @@ function App() {
                     </div>
                   </div>
                 )}
+
+                {/* Delete Actions */}
+                <div className="batch-delete-bar">
+                  <button 
+                    className="btn-delete-secondary"
+                    onClick={removeSelectedFromDb}
+                  >
+                    Remove from FrameFolio
+                  </button>
+                  <button 
+                    className="btn-delete-danger"
+                    onClick={deleteSelectedCompletely}
+                  >
+                    Delete
+                  </button>
+                </div>
 
                 {/* Add Tags */}
                 <div className="batch-tag-bar">
@@ -786,6 +902,8 @@ function App() {
         onTagImage={addTagToImage}
         onUntagImage={removeTagFromImage}
         onCreateTag={createTag}
+        onRemoveImage={removeImageFromDb}
+        onDeleteImage={deleteImageCompletely}
       />
 
       {/* Folder Browser Modal */}
