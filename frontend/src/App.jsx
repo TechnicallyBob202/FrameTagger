@@ -4,6 +4,7 @@ import { useImages, useTags, useFolders } from './hooks'
 import { useNotifications } from './hooks/useNotifications'
 import { Sidebar } from './components/Sidebar'
 import { NotificationsContainer } from './components/NotificationsContainer'
+import { ConfirmationModal } from './components/modals/ConfirmationModal'
 import { UploadProgressModal } from './components/modals/UploadProgressModal'
 import { DuplicateModal } from './components/modals/DuplicateModal'
 import { CropPositioningModal } from './components/modals/CropPositioningModal'
@@ -48,6 +49,21 @@ export default function App() {
   // Image detail panel state
   const [detailPanelTags, setDetailPanelTags] = useState([])
   const [tagSearchInput, setTagSearchInput] = useState('')
+
+  // Confirmation modal state
+  const [confirmation, setConfirmation] = useState(null)
+
+  const showConfirmation = (message, onConfirm, isDanger = false) => {
+    setConfirmation({
+      message,
+      onConfirm: () => {
+        onConfirm()
+        setConfirmation(null)
+      },
+      onCancel: () => setConfirmation(null),
+      isDanger
+    })
+  }
 
   useEffect(() => {
     localStorage.setItem('theme', theme)
@@ -296,34 +312,44 @@ export default function App() {
 
   async function handleBulkRemoveFromLibrary() {
     const count = selectedImages.size
-    if (!window.confirm(`Remove ${count} image(s) from library (keep files)?`)) return
-    try {
-      for (const imageId of selectedImages) {
-        await removeImage(imageId)
-      }
-      setSelectedImages(new Set())
-      notify(`${count} image(s) removed from library`, 'success')
-      await loadImages()
-    } catch (err) {
-      notify('Error removing images: ' + err.message, 'error')
-      console.error(err)
-    }
+    showConfirmation(
+      `Remove ${count} image(s) from library (keep files)?`,
+      async () => {
+        try {
+          for (const imageId of selectedImages) {
+            await removeImage(imageId)
+          }
+          setSelectedImages(new Set())
+          notify(`${count} image(s) removed from library`, 'success')
+          await loadImages()
+        } catch (err) {
+          notify('Error removing images: ' + err.message, 'error')
+          console.error(err)
+        }
+      },
+      false
+    )
   }
 
   async function handleBulkDeleteCompletely() {
     const count = selectedImages.size
-    if (!window.confirm(`Delete ${count} image(s) completely (remove files)?`)) return
-    try {
-      for (const imageId of selectedImages) {
-        await deleteImage(imageId)
-      }
-      setSelectedImages(new Set())
-      notify(`${count} image(s) deleted completely`, 'success')
-      await loadImages()
-    } catch (err) {
-      notify('Error deleting images: ' + err.message, 'error')
-      console.error(err)
-    }
+    showConfirmation(
+      `Delete ${count} image(s) completely (remove files)?`,
+      async () => {
+        try {
+          for (const imageId of selectedImages) {
+            await deleteImage(imageId)
+          }
+          setSelectedImages(new Set())
+          notify(`${count} image(s) deleted completely`, 'success')
+          await loadImages()
+        } catch (err) {
+          notify('Error deleting images: ' + err.message, 'error')
+          console.error(err)
+        }
+      },
+      true
+    )
   }
 
   const filteredImages = images.filter(img => {
@@ -512,7 +538,7 @@ export default function App() {
                   <div key={folder.id} className="folder-item">
                     <div className="folder-path">{folder.path}</div>
                     <button className="btn-danger" onClick={() => {
-                      if (window.confirm('Remove folder and all associated images?')) removeFolder(folder.id)
+                      showConfirmation('Remove folder and all associated images?', () => removeFolder(folder.id), true)
                     }}>
                       Remove
                     </button>
@@ -536,9 +562,7 @@ export default function App() {
                   Clear
                 </button>
                 <button className="btn-danger" onClick={() => {
-                  if (window.confirm(`Delete ${selectedTags.size} tag(s)?`)) {
-                    handleBulkTagDelete()
-                  }
+                  showConfirmation(`Delete ${selectedTags.size} tag(s)?`, handleBulkTagDelete, true)
                 }}>
                   Delete Selected
                 </button>
@@ -565,7 +589,7 @@ export default function App() {
                       <span>{tag.name}</span>
                     </div>
                     <button className="btn-danger btn-small" onClick={() => {
-                      if (window.confirm('Delete this tag?')) handleTagDelete(tag.id)
+                      showConfirmation('Delete this tag?', () => handleTagDelete(tag.id), true)
                     }}>
                       Delete
                     </button>
@@ -662,9 +686,7 @@ export default function App() {
             <button
               className="btn-secondary"
               onClick={() => {
-                if (window.confirm('Remove from library (keep file)?')) {
-                  handleRemoveImageFromLibrary(selectedImage.id)
-                }
+                showConfirmation('Remove from library (keep file)?', () => handleRemoveImageFromLibrary(selectedImage.id), false)
               }}
             >
               Remove
@@ -672,9 +694,7 @@ export default function App() {
             <button
               className="btn-danger"
               onClick={() => {
-                if (window.confirm('Delete completely (remove file)?')) {
-                  handleDeleteImageCompletely(selectedImage.id)
-                }
+                showConfirmation('Delete completely (remove file)?', () => handleDeleteImageCompletely(selectedImage.id), true)
               }}
             >
               Delete
@@ -811,6 +831,17 @@ export default function App() {
           setUploadState(prev => ({ ...prev, uploadingFile: null }))
           pollUploadStatus(uploadState.jobId)
         }} />
+      )}
+
+      {confirmation && (
+        <ConfirmationModal 
+          message={confirmation.message}
+          onConfirm={confirmation.onConfirm}
+          onCancel={confirmation.onCancel}
+          isDanger={confirmation.isDanger}
+          confirmText={confirmation.isDanger ? 'Delete' : 'Confirm'}
+          cancelText="Cancel"
+        />
       )}
     </div>
   )
