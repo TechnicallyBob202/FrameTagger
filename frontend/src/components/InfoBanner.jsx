@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import logoImg from '../assets/logo/framefolio_logo.png';
 
 export default function InfoBanner() {
   const [isVisible, setIsVisible] = useState(false);
@@ -21,28 +22,61 @@ export default function InfoBanner() {
   if (!isVisible) return null;
 
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-start justify-between gap-3">
-      <div className="flex-1">
-        <p className="text-blue-900 text-sm">
-          <strong>FrameFolio</strong> gives you complete control over your art collection for your Samsung Frame TV. Curate, organize, and manage your own images without subscriptions!
-        </p>
-        <label className="flex items-center gap-2 mt-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={dontShowAgain}
-            onChange={(e) => setDontShowAgain(e.target.checked)}
-            className="w-4 h-4"
-          />
-          <span className="text-xs text-blue-700">Don't show again</span>
-        </label>
+    <div className="info-banner-overlay" onClick={handleClose}>
+      <div className="info-banner-modal" onClick={(e) => e.stopPropagation()}>
+        {/* Close button */}
+        <button
+          className="info-banner-close"
+          onClick={handleClose}
+          aria-label="Close banner"
+        >
+          ✕
+        </button>
+
+        {/* Logo and Title */}
+        <div className="info-banner-header">
+          <img src={logoImg} alt="FrameFolio" className="info-banner-logo" />
+          <h2>Welcome to FrameFolio</h2>
+        </div>
+
+        {/* Content */}
+        <div className="info-banner-content">
+          <p>
+            Take complete control over your art collection for your Samsung Frame TV. 
+            Curate, organize, and manage your own images—no subscriptions, no limits.
+          </p>
+          
+          <div className="info-banner-features">
+            <div className="feature">
+              <span className="feature-icon">🎨</span>
+              <span>Upload & organize images</span>
+            </div>
+            <div className="feature">
+              <span className="feature-icon">🏷️</span>
+              <span>Tag & categorize collections</span>
+            </div>
+            <div className="feature">
+              <span className="feature-icon">📥</span>
+              <span>Download in FrameReady format</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer with checkbox and button */}
+        <div className="info-banner-footer">
+          <label className="info-banner-checkbox">
+            <input
+              type="checkbox"
+              checked={dontShowAgain}
+              onChange={(e) => setDontShowAgain(e.target.checked)}
+            />
+            <span>Don't show again</span>
+          </label>
+          <button className="info-banner-btn" onClick={handleClose}>
+            Get Started
+          </button>
+        </div>
       </div>
-      <button
-        onClick={handleClose}
-        className="text-blue-400 hover:text-blue-600 flex-shrink-0 text-xl"
-        aria-label="Close banner"
-      >
-        ✕
-      </button>
     </div>
   );
 }
