@@ -30,6 +30,9 @@ class DuplicateActionRequest(BaseModel):
     filename: str
     action: str
 
+class CreateTagRequest(BaseModel):
+    name: str
+
 app = FastAPI()
 
 app.add_middleware(
@@ -105,6 +108,13 @@ def migrate_db():
     except sqlite3.OperationalError:
         # Column already exists
         pass
+    
+    try:
+        cursor.execute('ALTER TABLE folders ADD COLUMN frameready_folder TEXT')
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
     finally:
         conn.close()
 
@@ -115,17 +125,18 @@ ensure_staging_dir()
 def get_folders_from_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('SELECT id, path FROM folders ORDER BY created_at')
+    cursor.execute('SELECT id, path, frameready_folder FROM folders ORDER BY created_at')
     results = cursor.fetchall()
     conn.close()
-    return [{"id": r[0], "path": r[1]} for r in results]
+    return [{"id": r[0], "path": r[1], "frameready_folder": r[2]} for r in results]
 
 def add_folder_to_db(path):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
-        cursor.execute('INSERT INTO folders (path, created_at) VALUES (?, ?)', 
-                      (path, datetime.now().isoformat()))
+        frameready_folder = f'.frameready_{uuid.uuid4().hex[:8]}'
+        cursor.execute('INSERT INTO folders (path, frameready_folder, created_at) VALUES (?, ?, ?)', 
+                      (path, frameready_folder, datetime.now().isoformat()))
         conn.commit()
         conn.close()
         return True
@@ -309,12 +320,18 @@ def rescan_library():
     
     for folder in folders:
         folder_path = Path(folder["path"])
+        frameready_folder = folder.get("frameready_folder")
+        
         if not folder_path.exists():
             continue
         
         try:
             for file_path in folder_path.rglob('*'):
                 try:
+                    # Skip frameready folder
+                    if frameready_folder and frameready_folder in file_path.parts:
+                        continue
+                    
                     if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS:
                         image_id = add_image_to_db(str(file_path), folder["id"])
                         if image_id:
@@ -408,13 +425,13 @@ def list_tags():
         return {"error": str(e)}
 
 @app.post("/api/tags")
-def create_tag_endpoint(name: str):
+def create_tag_endpoint(req: CreateTagRequest):
     try:
-        if not name or not name.strip():
+        if not req.name or not req.name.strip():
             return {"error": "Tag name required"}
         
-        if create_tag(name):
-            return {"status": "ok", "name": name.strip()}
+        if create_tag(req.name):
+            return {"status": "ok", "name": req.name.strip()}
         else:
             return {"error": "Tag already exists"}
     except Exception as e:

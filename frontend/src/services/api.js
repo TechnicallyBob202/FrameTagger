@@ -61,7 +61,11 @@ export async function fetchTags() {
 }
 
 export async function createTag(name) {
-  const response = await fetch(`${API_URL}/tags?name=${encodeURIComponent(name.trim())}`, { method: 'POST' })
+  const response = await fetch(`${API_URL}/tags`, { 
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim() })
+  })
   return response.json()
 }
 
@@ -126,6 +130,15 @@ export async function finalizeCropPositioning(jobId, filename, cropBox) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename, crop_box: cropBox })
+  })
+  return response.json()
+}
+
+export async function skipCropPositioning(jobId, filename) {
+  const response = await fetch(`${API_URL}/images/upload/${jobId}/position-skip`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename })
   })
   return response.json()
 }

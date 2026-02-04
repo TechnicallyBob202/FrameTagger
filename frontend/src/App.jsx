@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar'
 import { UploadProgressModal } from './components/modals/UploadProgressModal'
 import { DuplicateModal } from './components/modals/DuplicateModal'
 import { CropPositioningModal } from './components/modals/CropPositioningModal'
+import * as api from './services/api'
 import logoImg from './assets/logo/framefolio_logo.png'
 import iconWhite from './assets/icons/framefolio_icon_white.png'
 import iconBlack from './assets/icons/framefolio_icon_black.png'
@@ -41,6 +42,10 @@ export default function App() {
   const [tagInput, setTagInput] = useState('')
   const [selectedTags, setSelectedTags] = useState(new Set())
 
+  // Image detail panel state
+  const [detailPanelTags, setDetailPanelTags] = useState([])
+  const [tagSearchInput, setTagSearchInput] = useState('')
+
   useEffect(() => {
     localStorage.setItem('theme', theme)
     let themeToApply = theme
@@ -51,29 +56,45 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', themeToApply)
   }, [theme])
 
-  async function browseFolders(path) {
+  // Update detail panel tags when selectedImage changes
+  useEffect(() => {
+    if (selectedImage) {
+      setDetailPanelTags(selectedImage.tags || [])
+    }
+  }, [selectedImage])
+
+  async function browseFoldersHandler(path) {
     setFolderLoading(true)
     try {
-      const data = await (await fetch(`${API_URL}/folders/browse?path=${encodeURIComponent(path)}`)).json()
-      if (!data.error) {
-        setCurrentPath(data.current_path)
-        setBrowsingFolders(data.folders || [])
-        setParentPath(data.parent_path)
+      const data = await api.browseFolders(path)
+      if (data.error) {
+        alert('Error browsing folders: ' + data.error)
+        return
       }
+      setCurrentPath(data.current_path)
+      setBrowsingFolders(data.folders || [])
+      setParentPath(data.parent_path)
+    } catch (err) {
+      alert('Error browsing folders: ' + err.message)
+      console.error(err)
     } finally {
       setFolderLoading(false)
     }
   }
 
-  async function addFolder(path) {
+  async function addFolderHandler(path) {
     try {
-      const data = await (await fetch(`${API_URL}/folders/add?path=${encodeURIComponent(path)}`, { method: 'POST' })).json()
-      if (!data.error) {
-        await loadFolders()
-        setShowFolderModal(false)
-        await loadImages()
+      const data = await api.addFolder(path)
+      if (data.error) {
+        alert('Error adding folder: ' + data.error)
+        return
       }
+      await loadFolders()
+      setShowFolderModal(false)
+      await loadImages()
+      alert('Folder added successfully!')
     } catch (err) {
+      alert('Error adding folder: ' + err.message)
       console.error(err)
     }
   }
@@ -84,11 +105,7 @@ export default function App() {
     if (files.length === 0) return
 
     try {
-      const formData = new FormData()
-      for (let i = 0; i < files.length; i++) {
-        formData.append('files', files[i])
-      }
-      const startData = await (await fetch(`${API_URL}/images/upload/start?folder_id=${uploadFolderId}`, { method: 'POST', body: formData })).json()
+      const startData = await api.startUpload(uploadFolderId, files)
       if (startData.error) {
         alert('Upload failed: ' + startData.error)
         return
@@ -105,7 +122,7 @@ export default function App() {
   async function pollUploadStatus(jobId) {
     const pollInterval = setInterval(async () => {
       try {
-        const status = await (await fetch(`${API_URL}/images/upload/${jobId}/status`)).json()
+        const status = await api.getUploadStatus(jobId)
         const needsAction = status.results.find(r => r.status === 'duplicate_detected' || r.status === 'needs_positioning')
         if (needsAction) {
           clearInterval(pollInterval)
@@ -126,6 +143,148 @@ export default function App() {
         console.error(err)
       }
     }, 300)
+  }
+
+  async function handleRescan() {
+    try {
+      const data = await rescan()
+      if (data.error) {
+        alert('Error rescanning: ' + data.error)
+        return
+      }
+      await loadImages()
+      alert('Library rescanned successfully!')
+    } catch (err) {
+      alert('Error rescanning library: ' + err.message)
+      console.error(err)
+    }
+  }
+
+  async function handleTagCreate(names) {
+    try {
+      for (const name of names) {
+        const data = await createTag(name)
+        if (data.error) {
+          alert('Error creating tag: ' + data.error)
+          return
+        }
+      }
+      await loadTags()
+      setTagInput('')
+      setShowTagModal(false)
+      alert('Tags created successfully!')
+    } catch (err) {
+      alert('Error creating tags: ' + err.message)
+      console.error(err)
+    }
+  }
+
+  async function handleTagDelete(tagId) {
+    try {
+      const data = await deleteTag(tagId)
+      if (data.error) {
+        alert('Error deleting tag: ' + data.error)
+        return
+      }
+      await loadTags()
+      setSelectedTags(new Set())
+    } catch (err) {
+      alert('Error deleting tag: ' + err.message)
+      console.error(err)
+    }
+  }
+
+  async function handleBulkTagDelete() {
+    try {
+      for (const tagId of selectedTags) {
+        await deleteTag(tagId)
+      }
+      await loadTags()
+      setSelectedTags(new Set())
+      alert('Tags deleted successfully!')
+    } catch (err) {
+      alert('Error deleting tags: ' + err.message)
+      console.error(err)
+    }
+  }
+
+  async function handleAddTagToSelectedImage(tagId) {
+    if (!selectedImage) return
+    try {
+      const data = await addTag(selectedImage.id, tagId)
+      if (data && data.error) {
+        // Tag already applied, update local state
+      }
+      // Update selectedImage with new tags
+      const updatedImage = images.find(img => img.id === selectedImage.id)
+      if (updatedImage) {
+        setSelectedImage(updatedImage)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function handleRemoveTagFromSelectedImage(tagId) {
+    if (!selectedImage) return
+    try {
+      await removeTag(selectedImage.id, tagId)
+      // Update selectedImage with new tags
+      const updatedImage = images.find(img => img.id === selectedImage.id)
+      if (updatedImage) {
+        setSelectedImage(updatedImage)
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function handleRemoveImageFromLibrary(imageId) {
+    try {
+      const data = await removeImage(imageId)
+      if (data && data.error) {
+        alert('Error removing image: ' + data.error)
+        return
+      }
+      setSelectedImage(null)
+      alert('Image removed from library')
+    } catch (err) {
+      alert('Error removing image: ' + err.message)
+      console.error(err)
+    }
+  }
+
+  async function handleDeleteImageCompletely(imageId) {
+    try {
+      const data = await deleteImage(imageId)
+      if (data && data.error) {
+        alert('Error deleting image: ' + data.error)
+        return
+      }
+      setSelectedImage(null)
+      alert('Image deleted successfully')
+    } catch (err) {
+      alert('Error deleting image: ' + err.message)
+      console.error(err)
+    }
+  }
+
+  async function handleDownloadSelectedImage(imageId, filename) {
+    try {
+      await api.downloadImage(imageId, filename)
+    } catch (err) {
+      alert('Error downloading image: ' + err.message)
+      console.error(err)
+    }
+  }
+
+  async function handleDownloadMultiple() {
+    try {
+      await api.downloadMultipleImages(Array.from(selectedImages))
+    } catch (err) {
+      alert('Error downloading images: ' + err.message)
+      console.error(err)
+    }
   }
 
   const filteredImages = images.filter(img => {
@@ -155,7 +314,14 @@ export default function App() {
     return tags.filter(tag => commonTagIds.includes(tag.id))
   }
 
+  const getAvailableTags = () => {
+    if (!selectedImage) return tags
+    const appliedTagIds = new Set(selectedImage.tags.map(t => t.id))
+    return tags.filter(tag => !appliedTagIds.has(tag.id))
+  }
+
   const commonTags = getCommonTags()
+  const availableTags = getAvailableTags()
 
   return (
     <div className="app" data-theme={theme}>
@@ -178,10 +344,7 @@ export default function App() {
                   </button>
                 )}
                 {selectedImages.size > 0 && (
-                  <button className="btn-download" onClick={() => {
-                    const api = require('./services/api')
-                    api.downloadMultipleImages(Array.from(selectedImages))
-                  }}>
+                  <button className="btn-download" onClick={handleDownloadMultiple}>
                     ↓ Download Selected ({selectedImages.size})
                   </button>
                 )}
@@ -285,10 +448,10 @@ export default function App() {
           <section className="content-section">
             <h2>Folder Management</h2>
             <div className="library-controls">
-              <button className="btn-primary" onClick={() => { setShowFolderModal(true); browseFolders('/') }}>
+              <button className="btn-primary" onClick={() => { setShowFolderModal(true); browseFoldersHandler('/') }}>
                 + Add Folder
               </button>
-              <button className="btn-secondary" onClick={() => { rescan(); loadImages() }} disabled={isScanning}>
+              <button className="btn-secondary" onClick={handleRescan} disabled={isScanning}>
                 {isScanning ? '⟳ Scanning...' : '⟳ Rescan Library'}
               </button>
             </div>
@@ -325,8 +488,7 @@ export default function App() {
                 </button>
                 <button className="btn-danger" onClick={() => {
                   if (window.confirm(`Delete ${selectedTags.size} tag(s)?`)) {
-                    selectedTags.forEach(id => deleteTag(id))
-                    setSelectedTags(new Set())
+                    handleBulkTagDelete()
                   }
                 }}>
                   Delete Selected
@@ -354,7 +516,7 @@ export default function App() {
                       <span>{tag.name}</span>
                     </div>
                     <button className="btn-danger btn-small" onClick={() => {
-                      if (window.confirm('Delete this tag?')) deleteTag(tag.id)
+                      if (window.confirm('Delete this tag?')) handleTagDelete(tag.id)
                     }}>
                       Delete
                     </button>
@@ -389,6 +551,89 @@ export default function App() {
         )}
       </main>
 
+      {/* IMAGE DETAIL PANEL */}
+      {selectedImage && (
+        <div className="image-detail-panel">
+          <div className="detail-header">
+            <h2>{selectedImage.name}</h2>
+            <button className="detail-close" onClick={() => setSelectedImage(null)}>✕</button>
+          </div>
+
+          <div className="detail-preview">
+            <img src={`${API_URL}/images/${selectedImage.id}/preview`} alt={selectedImage.name} />
+          </div>
+
+          <div className="detail-info">
+            <p><strong>Size:</strong> {(selectedImage.size / 1024 / 1024).toFixed(2)} MB</p>
+            <p><strong>Added:</strong> {new Date(selectedImage.date_added).toLocaleDateString()}</p>
+          </div>
+
+          <div className="detail-tags">
+            <h3>Tags ({detailPanelTags.length})</h3>
+            {detailPanelTags.length > 0 ? (
+              <div className="tag-list">
+                {detailPanelTags.map(tag => (
+                  <div key={tag.id} className="tag-item-small">
+                    <span>{tag.name}</span>
+                    <button className="tag-remove" onClick={() => handleRemoveTagFromSelectedImage(tag.id)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-message">No tags yet</p>
+            )}
+
+            <div className="add-tags-section">
+              <h4>Add Tags</h4>
+              {availableTags.length > 0 ? (
+                <div className="available-tags">
+                  {availableTags.map(tag => (
+                    <button
+                      key={tag.id}
+                      className="tag-add-btn"
+                      onClick={() => handleAddTagToSelectedImage(tag.id)}
+                    >
+                      + {tag.name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-message">All tags already applied</p>
+              )}
+            </div>
+          </div>
+
+          <div className="detail-actions">
+            <button
+              className="btn-secondary"
+              onClick={() => handleDownloadSelectedImage(selectedImage.id, selectedImage.name)}
+            >
+              ↓ Download
+            </button>
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                if (window.confirm('Remove from library (keep file)?')) {
+                  handleRemoveImageFromLibrary(selectedImage.id)
+                }
+              }}
+            >
+              Remove
+            </button>
+            <button
+              className="btn-danger"
+              onClick={() => {
+                if (window.confirm('Delete completely (remove file)?')) {
+                  handleDeleteImageCompletely(selectedImage.id)
+                }
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
       {showFolderModal && (
         <div className="modal-overlay" onClick={() => setShowFolderModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -398,7 +643,7 @@ export default function App() {
             </div>
             <div className="modal-content">
               <div className="browser-path">
-                <button className="btn-secondary" onClick={() => parentPath && browseFolders(parentPath)} disabled={!parentPath}>
+                <button className="btn-secondary" onClick={() => parentPath && browseFoldersHandler(parentPath)} disabled={!parentPath}>
                   ← Back
                 </button>
                 <span className="path-text">{currentPath}</span>
@@ -412,10 +657,10 @@ export default function App() {
                   ) : (
                     browsingFolders.map((folder) => (
                       <div key={folder.path} className="browser-item">
-                        <span className="folder-name" onClick={() => browseFolders(folder.path)}>
+                        <span className="folder-name" onClick={() => browseFoldersHandler(folder.path)}>
                           📁 {folder.name}
                         </span>
-                        <button className="btn-success" onClick={() => addFolder(folder.path)}>
+                        <button className="btn-success" onClick={() => addFolderHandler(folder.path)}>
                           Add
                         </button>
                       </div>
@@ -455,11 +700,10 @@ export default function App() {
               <button className="btn-secondary" onClick={() => { setShowTagModal(false); setTagInput('') }}>
                 Cancel
               </button>
-              <button className="btn-primary" onClick={async () => {
+              <button className="btn-primary" onClick={() => {
                 const names = tagInput.split(',').map(t => t.trim()).filter(t => t)
-                for (const name of names) await createTag(name)
-                setTagInput('')
-                setShowTagModal(false)
+                if (names.length === 0) return
+                handleTagCreate(names)
               }} disabled={!tagInput.trim()}>
                 Create
               </button>
