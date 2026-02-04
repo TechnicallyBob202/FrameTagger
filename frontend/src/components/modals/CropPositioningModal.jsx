@@ -60,16 +60,16 @@ export function CropPositioningModal({ result, jobId, onComplete }) {
   async function handleSubmit() {
     setIsSubmitting(true)
     try {
-      // Calculate original image dimensions at current scale
-      const scaledWidth = aspectInfo.width / imageScale
-      const scaledHeight = aspectInfo.height / imageScale
+      // Calculate displayed image dimensions
+      const displayedWidth = (aspectInfo.width / aspectInfo.height) * boxHeight * imageScale
+      const displayedHeight = boxHeight * imageScale
       
       // Calculate what part of the original image is visible in the yellow box (0-1 normalized)
       const crop_box = {
-        x: Math.max(0, Math.min(1, -imageOffset.x / scaledWidth)),
-        y: Math.max(0, Math.min(1, -imageOffset.y / scaledHeight)),
-        width: Math.min(1 - Math.max(0, -imageOffset.x / scaledWidth), boxWidth / scaledWidth),
-        height: Math.min(1 - Math.max(0, -imageOffset.y / scaledHeight), boxHeight / scaledHeight)
+        x: Math.max(0, Math.min(1, -imageOffset.x / displayedWidth)),
+        y: Math.max(0, Math.min(1, -imageOffset.y / displayedHeight)),
+        width: Math.min(1 - Math.max(0, -imageOffset.x / displayedWidth), boxWidth / displayedWidth),
+        height: Math.min(1 - Math.max(0, -imageOffset.y / displayedHeight), boxHeight / displayedHeight)
       }
 
       const response = await fetch(
