@@ -75,6 +75,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT UNIQUE NOT NULL,
             md5_hash TEXT,
+            frameready_path TEXT,
             folder_id INTEGER NOT NULL,
             date_added TEXT NOT NULL,
             FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE
@@ -111,6 +112,13 @@ def migrate_db():
     
     try:
         cursor.execute('ALTER TABLE folders ADD COLUMN frameready_folder TEXT')
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
+    
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN frameready_path TEXT')
         conn.commit()
     except sqlite3.OperationalError:
         # Column already exists
@@ -758,10 +766,10 @@ async def process_upload(job_id: str, file_contents: list, folder_path: Path, fo
                 final_path = folder_path / filename
                 shutil.move(str(staging_file), str(final_path))
                 
-                # Update database with final path
+                # Update database with final path and frameready_path
                 conn = sqlite3.connect(DB_PATH)
                 cursor = conn.cursor()
-                cursor.execute('UPDATE images SET path = ? WHERE id = ?', (str(final_path), image_id))
+                cursor.execute('UPDATE images SET path = ?, frameready_path = ? WHERE id = ?', (str(final_path), frameready_path, image_id))
                 conn.commit()
                 conn.close()
                 
@@ -855,7 +863,7 @@ async def handle_duplicate(job_id: str, req: DuplicateActionRequest):
             
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            cursor.execute('UPDATE images SET path = ? WHERE id = ?', (str(final_path), image_id))
+            cursor.execute('UPDATE images SET path = ?, frameready_path = ? WHERE id = ?', (str(final_path), frameready_path, image_id))
             conn.commit()
             conn.close()
             
@@ -885,7 +893,7 @@ async def handle_duplicate(job_id: str, req: DuplicateActionRequest):
             
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
-            cursor.execute('UPDATE images SET path = ? WHERE id = ?', (str(final_path), image_id))
+            cursor.execute('UPDATE images SET path = ?, frameready_path = ? WHERE id = ?', (str(final_path), frameready_path, image_id))
             conn.commit()
             conn.close()
             
@@ -956,7 +964,7 @@ async def finalize_positioned_upload(job_id: str, req: PositionRequest):
         # Update DB
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute('UPDATE images SET path = ? WHERE id = ?', (str(final_path), image_id))
+        cursor.execute('UPDATE images SET path = ?, frameready_path = ? WHERE id = ?', (str(final_path), frameready_path, image_id))
         conn.commit()
         conn.close()
         
@@ -1007,13 +1015,27 @@ async def skip_positioned_upload(job_id: str, req: SkipPositionRequest):
 
 @app.get("/api/images/{image_id}/download")
 def download_image(image_id: int):
-    """Download original image file"""
+    """Download FrameReady version if available, else original"""
     try:
         img = get_image_by_id(image_id)
         if not img:
             return {"error": "Image not found"}
         
-        file_path = Path(img["path"])
+        # Try to get frameready version
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT frameready_path FROM images WHERE id = ?', (image_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        frameready_path = result[0] if result and result[0] else None
+        
+        # Prefer FrameReady if it exists
+        if frameready_path and Path(frameready_path).exists():
+            file_path = Path(frameready_path)
+        else:
+            file_path = Path(img["path"])
+        
         if not file_path.exists():
             return {"error": "File not found"}
         
@@ -1027,7 +1049,7 @@ def download_image(image_id: int):
 
 @app.post("/api/images/download-zip")
 def download_zip(image_ids: list[int]):
-    """Download multiple images as zip"""
+    """Download multiple FrameReady versions as zip"""
     try:
         if not image_ids or len(image_ids) == 0:
             return {"error": "No images selected"}
@@ -1040,7 +1062,21 @@ def download_zip(image_ids: list[int]):
                 if not img:
                     continue
                 
-                file_path = Path(img["path"])
+                # Try to get frameready version
+                conn = sqlite3.connect(DB_PATH)
+                cursor = conn.cursor()
+                cursor.execute('SELECT frameready_path FROM images WHERE id = ?', (image_id,))
+                result = cursor.fetchone()
+                conn.close()
+                
+                frameready_path = result[0] if result and result[0] else None
+                
+                # Prefer FrameReady if it exists
+                if frameready_path and Path(frameready_path).exists():
+                    file_path = Path(frameready_path)
+                else:
+                    file_path = Path(img["path"])
+                
                 if file_path.exists():
                     # Add file to zip with just the filename
                     zip_file.write(file_path, arcname=file_path.name)

@@ -4,10 +4,12 @@ import { useImages, useTags, useFolders } from './hooks'
 import { useNotifications } from './hooks/useNotifications'
 import { Sidebar } from './components/Sidebar'
 import { NotificationsContainer } from './components/NotificationsContainer'
+import InfoBanner from './components/InfoBanner'
 import { ConfirmationModal } from './components/modals/ConfirmationModal'
 import { UploadProgressModal } from './components/modals/UploadProgressModal'
 import { DuplicateModal } from './components/modals/DuplicateModal'
 import { CropPositioningModal } from './components/modals/CropPositioningModal'
+import { TagDialog } from './components/modals/TagDialog'
 import * as api from './services/api'
 import logoImg from './assets/logo/framefolio_logo.png'
 import iconWhite from './assets/icons/framefolio_icon_white.png'
@@ -45,6 +47,7 @@ export default function App() {
   const [showTagModal, setShowTagModal] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [selectedTags, setSelectedTags] = useState(new Set())
+  const [showTagDialog, setShowTagDialog] = useState(false)
 
   // Image detail panel state
   const [detailPanelTags, setDetailPanelTags] = useState([])
@@ -81,6 +84,13 @@ export default function App() {
       setDetailPanelTags(selectedImage.tags || [])
     }
   }, [selectedImage])
+
+  // Show tag dialog when image(s) are selected
+  useEffect(() => {
+    if ((selectedImage || selectedImages.size > 0) && !showTagDialog) {
+      setShowTagDialog(true)
+    }
+  }, [selectedImage, selectedImages.size, showTagDialog])
 
   async function browseFoldersHandler(path) {
     setFolderLoading(true)
@@ -227,17 +237,36 @@ export default function App() {
     }
   }
 
-  async function handleAddTagToSelectedImage(tagId) {
-    if (!selectedImage) return
+  async function handleCreateTagForDialog(name) {
     try {
-      const data = await addTag(selectedImage.id, tagId)
-      if (data && data.error) {
-        // Tag already applied, update local state
+      const data = await createTag(name)
+      if (data.error) {
+        notify('Error creating tag: ' + data.error, 'error')
+        throw new Error(data.error)
       }
-      // Update selectedImage with new tags
-      const updatedImage = images.find(img => img.id === selectedImage.id)
-      if (updatedImage) {
-        setSelectedImage(updatedImage)
+      await loadTags()
+      return data
+    } catch (err) {
+      notify('Error creating tag: ' + err.message, 'error')
+      console.error(err)
+      throw err
+    }
+  }
+
+  async function handleAddTagToSelectedImage(imageId, tagId) {
+    try {
+      const data = await addTag(imageId, tagId)
+      if (data && data.error) {
+        // Tag already applied
+      }
+      // Reload images to get updated tags
+      await loadImages()
+      // Update selectedImage if it was tagged
+      if (selectedImage && selectedImage.id === imageId) {
+        const updatedImage = images.find(img => img.id === selectedImage.id)
+        if (updatedImage) {
+          setSelectedImage(updatedImage)
+        }
       }
     } catch (err) {
       console.error(err)
@@ -397,6 +426,7 @@ export default function App() {
       <main className="main-content">
         {activeSection === 'images' && (
           <section className="content-section">
+            <InfoBanner />
             <div className="header-bar">
               <div className="stats-bar">
                 <div className="stat-item">
@@ -664,7 +694,7 @@ export default function App() {
                     <button
                       key={tag.id}
                       className="tag-add-btn"
-                      onClick={() => handleAddTagToSelectedImage(tag.id)}
+                      onClick={() => handleAddTagToSelectedImage(selectedImage.id, tag.id)}
                     >
                       + {tag.name}
                     </button>
@@ -843,6 +873,17 @@ export default function App() {
           cancelText="Cancel"
         />
       )}
+
+      <TagDialog
+        isOpen={showTagDialog}
+        onClose={() => setShowTagDialog(false)}
+        selectedImage={selectedImage}
+        selectedImages={selectedImages}
+        tags={images}
+        onAddTag={handleAddTagToSelectedImage}
+        onCreateTag={handleCreateTagForDialog}
+        existingTags={tags}
+      />
     </div>
   )
 }
