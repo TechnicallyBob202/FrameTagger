@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, File
 from starlette.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from pathlib import Path
 from PIL import Image
 import sqlite3
@@ -16,6 +17,18 @@ from services.image_processor import (
     generate_thumbnail, get_file_info, crop_and_export_frameready,
     cleanup_staging, cleanup_staging_file, ensure_staging_dir, STAGING_DIR
 )
+
+# Request body models
+class PositionRequest(BaseModel):
+    filename: str
+    crop_box: dict
+
+class SkipPositionRequest(BaseModel):
+    filename: str
+
+class DuplicateActionRequest(BaseModel):
+    filename: str
+    action: str
 
 app = FastAPI()
 
@@ -764,11 +777,13 @@ async def process_upload(job_id: str, file_contents: list, folder_path: Path, fo
         upload_jobs[job_id]["errors"].append(str(e))
 
 @app.post("/api/images/upload/{job_id}/duplicate-action")
-async def handle_duplicate(job_id: str, filename: str, action: str):
+async def handle_duplicate(job_id: str, req: DuplicateActionRequest):
     """
     Handle user's duplicate decision: skip, overwrite, or import_anyway.
-    action: "skip" | "overwrite" | "import_anyway"
     """
+    filename = req.filename
+    action = req.action
+    
     if job_id not in upload_jobs:
         return {"error": "Job not found"}
     
@@ -873,11 +888,14 @@ async def handle_duplicate(job_id: str, filename: str, action: str):
         return {"error": str(e)}
 
 @app.post("/api/images/upload/{job_id}/position")
-async def finalize_positioned_upload(job_id: str, filename: str, crop_box: dict):
+async def finalize_positioned_upload(job_id: str, req: PositionRequest):
     """
     User has positioned the crop box. Finalize this file.
     crop_box: {x, y, width, height} in normalized 0-1 coords
     """
+    filename = req.filename
+    crop_box = req.crop_box
+    
     if job_id not in upload_jobs:
         return {"error": "Job not found"}
     
@@ -941,10 +959,12 @@ async def finalize_positioned_upload(job_id: str, filename: str, crop_box: dict)
         return {"error": str(e)}
 
 @app.post("/api/images/upload/{job_id}/position-skip")
-async def skip_positioned_upload(job_id: str, filename: str):
+async def skip_positioned_upload(job_id: str, req: SkipPositionRequest):
     """
     User skipped positioning. Mark file as skipped.
     """
+    filename = req.filename
+    
     if job_id not in upload_jobs:
         return {"error": "Job not found"}
     
