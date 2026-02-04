@@ -597,8 +597,17 @@ async def start_upload(folder_id: int, files: list[UploadFile] = File(...)):
         upload_jobs[job_id]["errors"].append("Folder path does not exist")
         return {"job_id": job_id}
     
-    # Process files asynchronously
-    asyncio.create_task(process_upload(job_id, files, folder_path, folder_id))
+    # READ file contents BEFORE returning (while request context is open)
+    file_contents = []
+    for file in files:
+        try:
+            content = await file.read()
+            file_contents.append((file.filename, content))
+        except Exception as e:
+            upload_jobs[job_id]["errors"].append(f"Failed to read {file.filename}: {str(e)}")
+    
+    # Process files asynchronously with bytes
+    asyncio.create_task(process_upload(job_id, file_contents, folder_path, folder_id))
     
     return {"job_id": job_id}
 
@@ -609,30 +618,30 @@ def get_upload_status(job_id: str):
         return {"error": "Job not found"}
     return upload_jobs[job_id]
 
-async def process_upload(job_id: str, files: list[UploadFile], folder_path: Path, folder_id: int):
+async def process_upload(job_id: str, file_contents: list, folder_path: Path, folder_id: int):
     """
     Process upload with duplicate detection, portrait rejection, aspect analysis.
+    file_contents: list of (filename, bytes) tuples
     """
     try:
-        for idx, file in enumerate(files):
-            upload_jobs[job_id]["progress"] = int((idx / len(files)) * 100)
-            upload_jobs[job_id]["current_step"] = f"Processing {file.filename}"
+        for idx, (filename, content) in enumerate(file_contents):
+            upload_jobs[job_id]["progress"] = int((idx / len(file_contents)) * 100)
+            upload_jobs[job_id]["current_step"] = f"Processing {filename}"
             
             try:
-                # Read file to staging
-                upload_jobs[job_id]["current_step"] = f"Reading {file.filename}"
-                contents = await file.read()
-                staging_file = STAGING_DIR / f"{uuid.uuid4()}_{file.filename}"
+                # Write content to staging
+                upload_jobs[job_id]["current_step"] = f"Reading {filename}"
+                staging_file = STAGING_DIR / f"{uuid.uuid4()}_{filename}"
                 
                 with open(staging_file, 'wb') as f:
-                    f.write(contents)
+                    f.write(content)
                 
                 # Compute MD5
-                upload_jobs[job_id]["current_step"] = f"Computing hash for {file.filename}"
+                upload_jobs[job_id]["current_step"] = f"Computing hash for {filename}"
                 md5_hash = compute_md5(staging_file)
                 
                 # Check duplicates
-                upload_jobs[job_id]["current_step"] = f"Checking duplicates for {file.filename}"
+                upload_jobs[job_id]["current_step"] = f"Checking duplicates for {filename}"
                 dup = check_duplicates(DB_PATH, md5_hash)
                 
                 if dup:
@@ -641,7 +650,7 @@ async def process_upload(job_id: str, files: list[UploadFile], folder_path: Path
                     incoming_thumb = generate_thumbnail(staging_file)
                     
                     upload_jobs[job_id]["results"].append({
-                        "filename": file.filename,
+                        "filename": filename,
                         "status": "duplicate_detected",
                         "staging_path": str(staging_file),
                         "duplicate": {
@@ -659,12 +668,12 @@ async def process_upload(job_id: str, files: list[UploadFile], folder_path: Path
                     continue
                 
                 # Check orientation
-                upload_jobs[job_id]["current_step"] = f"Analyzing {file.filename}"
+                upload_jobs[job_id]["current_step"] = f"Analyzing {filename}"
                 aspect_info = detect_orientation_and_aspect(staging_file)
                 
                 if aspect_info['orientation'] == 'portrait':
                     upload_jobs[job_id]["results"].append({
-                        "filename": file.filename,
+                        "filename": filename,
                         "status": "portrait_rejected",
                         "error": "Portrait orientation not supported"
                     })
@@ -674,7 +683,7 @@ async def process_upload(job_id: str, files: list[UploadFile], folder_path: Path
                 # If not close to 16:9, need user input
                 if not aspect_info['is_close_to_16_9']:
                     upload_jobs[job_id]["results"].append({
-                        "filename": file.filename,
+                        "filename": filename,
                         "status": "needs_positioning",
                         "aspect_info": aspect_info,
                         "thumbnail": generate_thumbnail(staging_file, size=600),
@@ -683,17 +692,17 @@ async def process_upload(job_id: str, files: list[UploadFile], folder_path: Path
                     continue
                 
                 # Auto-crop and export FrameReady
-                upload_jobs[job_id]["current_step"] = f"Finalizing {file.filename}"
+                upload_jobs[job_id]["current_step"] = f"Finalizing {filename}"
                 
                 # Add to database
                 image_id = add_image_to_db(
-                    str(folder_path / file.filename),
+                    str(folder_path / filename),
                     folder_id,
                     md5_hash
                 )
                 
                 if not image_id:
-                    upload_jobs[job_id]["errors"].append(f"Failed to add {file.filename} to database")
+                    upload_jobs[job_id]["errors"].append(f"Failed to add {filename} to database")
                     cleanup_staging_file(staging_file)
                     continue
                 
@@ -701,7 +710,7 @@ async def process_upload(job_id: str, files: list[UploadFile], folder_path: Path
                 frameready_path = crop_and_export_frameready(staging_file, folder_path, image_id)
                 
                 # Move original to final location
-                final_path = folder_path / file.filename
+                final_path = folder_path / filename
                 staging_file.rename(final_path)
                 
                 # Update database with final path
@@ -712,14 +721,14 @@ async def process_upload(job_id: str, files: list[UploadFile], folder_path: Path
                 conn.close()
                 
                 upload_jobs[job_id]["results"].append({
-                    "filename": file.filename,
+                    "filename": filename,
                     "status": "success",
                     "id": image_id,
                     "frameready": frameready_path
                 })
                 
             except Exception as e:
-                upload_jobs[job_id]["errors"].append(f"{file.filename}: {str(e)}")
+                upload_jobs[job_id]["errors"].append(f"{filename}: {str(e)}")
                 try:
                     cleanup_staging_file(staging_file)
                 except:
