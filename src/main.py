@@ -33,6 +33,9 @@ class DuplicateActionRequest(BaseModel):
 class CreateTagRequest(BaseModel):
     name: str
 
+class DownloadZipRequest(BaseModel):
+    image_ids: list[int]
+
 app = FastAPI()
 
 app.add_middleware(
@@ -128,6 +131,23 @@ def migrate_db():
 
 migrate_db()
 ensure_staging_dir()
+
+# HELPER FUNCTIONS
+
+def find_frameready_on_disk(image_path: str, image_id: int):
+    """Find FrameReady file on disk if not in DB"""
+    try:
+        img_path = Path(image_path)
+        if not img_path.parent.exists():
+            return None
+        for frameready_dir in img_path.parent.glob('.frameready_*'):
+            if frameready_dir.is_dir():
+                frameready_file = frameready_dir / f"{image_id}.jpg"
+                if frameready_file.exists():
+                    return str(frameready_file)
+        return None
+    except Exception:
+        return None
 
 # FOLDER FUNCTIONS
 def get_folders_from_db():
@@ -1030,6 +1050,10 @@ def get_frameready(image_id: int):
         
         frameready_path = result[0] if result and result[0] else None
         
+        # Try disk if not in DB
+        if not frameready_path:
+            frameready_path = find_frameready_on_disk(img["path"], image_id)
+        
         # Return FrameReady if it exists
         if frameready_path and Path(frameready_path).exists():
             return FileResponse(frameready_path, media_type="image/jpeg")
@@ -1066,11 +1090,19 @@ def download_image(image_id: int):
         conn.close()
         
         frameready_path = result[0] if result and result[0] else None
+        file_path = None
         
-        # Prefer FrameReady if it exists
+        # Check DB first
         if frameready_path and Path(frameready_path).exists():
             file_path = Path(frameready_path)
         else:
+            # Try to find on disk if not in DB
+            disk_frameready = find_frameready_on_disk(img["path"], image_id)
+            if disk_frameready and Path(disk_frameready).exists():
+                file_path = Path(disk_frameready)
+        
+        # Fallback to original
+        if not file_path:
             file_path = Path(img["path"])
         
         if not file_path.exists():
@@ -1085,44 +1117,60 @@ def download_image(image_id: int):
         return {"error": str(e)}
 
 @app.post("/api/images/download-zip")
-def download_zip(image_ids: list[int]):
+def download_zip(req: DownloadZipRequest):
     """Download multiple FrameReady versions as zip"""
     try:
+        image_ids = req.image_ids
         if not image_ids or len(image_ids) == 0:
             return {"error": "No images selected"}
         
-        # Create zip in memory
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for image_id in image_ids:
-                img = get_image_by_id(image_id)
-                if not img:
-                    continue
-                
-                # Try to get frameready version
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute('SELECT frameready_path FROM images WHERE id = ?', (image_id,))
-                result = cursor.fetchone()
-                conn.close()
-                
-                frameready_path = result[0] if result and result[0] else None
-                
-                # Prefer FrameReady if it exists
-                if frameready_path and Path(frameready_path).exists():
-                    file_path = Path(frameready_path)
-                else:
-                    file_path = Path(img["path"])
-                
-                if file_path.exists():
-                    # Add file to zip with just the filename
-                    zip_file.write(file_path, arcname=file_path.name)
+        def generate_zip():
+            """Generator to stream zip content"""
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                for image_id in image_ids:
+                    img = get_image_by_id(image_id)
+                    if not img:
+                        continue
+                    
+                    # Try to get frameready version
+                    conn = sqlite3.connect(DB_PATH)
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT frameready_path FROM images WHERE id = ?', (image_id,))
+                    result = cursor.fetchone()
+                    conn.close()
+                    
+                    frameready_path = result[0] if result and result[0] else None
+                    file_path = None
+                    
+                    # Check DB first
+                    if frameready_path and Path(frameready_path).exists():
+                        file_path = Path(frameready_path)
+                    else:
+                        # Try to find on disk if not in DB
+                        disk_frameready = find_frameready_on_disk(img["path"], image_id)
+                        if disk_frameready and Path(disk_frameready).exists():
+                            file_path = Path(disk_frameready)
+                    
+                    # Fallback to original
+                    if not file_path:
+                        file_path = Path(img["path"])
+                    
+                    if file_path.exists():
+                        zip_file.write(file_path, arcname=file_path.name)
+            
+            # Yield in 8KB chunks
+            zip_buffer.seek(0)
+            while True:
+                chunk = zip_buffer.read(8192)
+                if not chunk:
+                    break
+                yield chunk
         
-        zip_buffer.seek(0)
-        return FileResponse(
-            zip_buffer,
+        return StreamingResponse(
+            generate_zip(),
             media_type="application/zip",
-            filename="images.zip"
+            headers={"Content-Disposition": "attachment; filename=images.zip"}
         )
     except Exception as e:
         return {"error": str(e)}

@@ -42,7 +42,7 @@ export async function downloadMultipleImages(imageIds) {
   const response = await fetch(`${API_URL}/images/download-zip`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image_ids: imageIds })
+    body: JSON.stringify(imageIds)
   })
   const blob = await response.blob()
   const url = window.URL.createObjectURL(blob)
@@ -96,6 +96,7 @@ export async function removeFolder(folderId) {
 
 export async function rescanLibrary() {
   const response = await fetch(`${API_URL}/rescan`, { method: 'POST' })
+  if (!response.ok) throw new Error(`Rescan failed: ${response.statusText}`)
   return response.json()
 }
 
