@@ -81,6 +81,21 @@ def init_db():
     conn.close()
 
 init_db()
+
+# Migration: Add md5_hash column if it doesn't exist
+def migrate_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('ALTER TABLE images ADD COLUMN md5_hash TEXT')
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
+    finally:
+        conn.close()
+
+migrate_db()
 ensure_staging_dir()
 
 # FOLDER FUNCTIONS
