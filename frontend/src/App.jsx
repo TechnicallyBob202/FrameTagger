@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import { useImages, useTags, useFolders } from './hooks'
+import { useNotifications } from './hooks/useNotifications'
 import { Sidebar } from './components/Sidebar'
+import { NotificationsContainer } from './components/NotificationsContainer'
 import { UploadProgressModal } from './components/modals/UploadProgressModal'
 import { DuplicateModal } from './components/modals/DuplicateModal'
 import { CropPositioningModal } from './components/modals/CropPositioningModal'
@@ -16,6 +18,7 @@ export default function App() {
   const { images, loadImages, removeImage, deleteImage, addTag, removeTag } = useImages()
   const { tags, loadTags, create: createTag, delete: deleteTag } = useTags()
   const { folders, isScanning, loadFolders, removeFolder, rescan } = useFolders()
+  const { notify } = useNotifications()
 
   const [activeSection, setActiveSection] = useState('images')
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
@@ -68,14 +71,14 @@ export default function App() {
     try {
       const data = await api.browseFolders(path)
       if (data.error) {
-        alert('Error browsing folders: ' + data.error)
+        notify('Error browsing folders: ' + data.error, 'error')
         return
       }
       setCurrentPath(data.current_path)
       setBrowsingFolders(data.folders || [])
       setParentPath(data.parent_path)
     } catch (err) {
-      alert('Error browsing folders: ' + err.message)
+      notify('Error browsing folders: ' + err.message, 'error')
       console.error(err)
     } finally {
       setFolderLoading(false)
@@ -86,15 +89,15 @@ export default function App() {
     try {
       const data = await api.addFolder(path)
       if (data.error) {
-        alert('Error adding folder: ' + data.error)
+        notify('Error adding folder: ' + data.error, 'error')
         return
       }
       await loadFolders()
       setShowFolderModal(false)
       await loadImages()
-      alert('Folder added successfully!')
+      notify('Folder added successfully!', 'success')
     } catch (err) {
-      alert('Error adding folder: ' + err.message)
+      notify('Error adding folder: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -107,7 +110,7 @@ export default function App() {
     try {
       const startData = await api.startUpload(uploadFolderId, files)
       if (startData.error) {
-        alert('Upload failed: ' + startData.error)
+        notify('Upload failed: ' + startData.error, 'error')
         return
       }
       setUploadState({ jobId: startData.job_id, uploadingFile: null, processing: true })
@@ -115,7 +118,7 @@ export default function App() {
       e.target.value = ''
     } catch (err) {
       console.error(err)
-      alert('Upload failed: ' + err.message)
+      notify('Upload failed: ' + err.message, 'error')
     }
   }
 
@@ -136,7 +139,7 @@ export default function App() {
           setUploadFolderId(null)
           setUploadState({ jobId: null, uploadingFile: null, processing: false })
           const successful = status.results.filter(r => r.status === 'success').length
-          alert(`Upload complete! ${successful}/${status.total_files} images uploaded.`)
+          notify(`Upload complete! ${successful}/${status.total_files} images uploaded.`, 'success')
         }
       } catch (err) {
         clearInterval(pollInterval)
@@ -149,13 +152,13 @@ export default function App() {
     try {
       const data = await rescan()
       if (data.error) {
-        alert('Error rescanning: ' + data.error)
+        notify('Error rescanning: ' + data.error, 'error')
         return
       }
       await loadImages()
-      alert('Library rescanned successfully!')
+      notify('Library rescanned successfully!', 'success')
     } catch (err) {
-      alert('Error rescanning library: ' + err.message)
+      notify('Error rescanning library: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -165,16 +168,16 @@ export default function App() {
       for (const name of names) {
         const data = await createTag(name)
         if (data.error) {
-          alert('Error creating tag: ' + data.error)
+          notify('Error creating tag: ' + data.error, 'error')
           return
         }
       }
       await loadTags()
       setTagInput('')
       setShowTagModal(false)
-      alert('Tags created successfully!')
+      notify('Tags created successfully!', 'success')
     } catch (err) {
-      alert('Error creating tags: ' + err.message)
+      notify('Error creating tags: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -183,13 +186,13 @@ export default function App() {
     try {
       const data = await deleteTag(tagId)
       if (data.error) {
-        alert('Error deleting tag: ' + data.error)
+        notify('Error deleting tag: ' + data.error, 'error')
         return
       }
       await loadTags()
       setSelectedTags(new Set())
     } catch (err) {
-      alert('Error deleting tag: ' + err.message)
+      notify('Error deleting tag: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -201,9 +204,9 @@ export default function App() {
       }
       await loadTags()
       setSelectedTags(new Set())
-      alert('Tags deleted successfully!')
+      notify('Tags deleted successfully!', 'success')
     } catch (err) {
-      alert('Error deleting tags: ' + err.message)
+      notify('Error deleting tags: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -243,13 +246,14 @@ export default function App() {
     try {
       const data = await removeImage(imageId)
       if (data && data.error) {
-        alert('Error removing image: ' + data.error)
+        notify('Error removing image: ' + data.error, 'error')
         return
       }
       setSelectedImage(null)
-      alert('Image removed from library')
+      await loadImages()
+      notify('Image removed from library', 'success')
     } catch (err) {
-      alert('Error removing image: ' + err.message)
+      notify('Error removing image: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -258,13 +262,14 @@ export default function App() {
     try {
       const data = await deleteImage(imageId)
       if (data && data.error) {
-        alert('Error deleting image: ' + data.error)
+        notify('Error deleting image: ' + data.error, 'error')
         return
       }
       setSelectedImage(null)
-      alert('Image deleted successfully')
+      await loadImages()
+      notify('Image deleted successfully', 'success')
     } catch (err) {
-      alert('Error deleting image: ' + err.message)
+      notify('Error deleting image: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -272,8 +277,9 @@ export default function App() {
   async function handleDownloadSelectedImage(imageId, filename) {
     try {
       await api.downloadImage(imageId, filename)
+      notify('Image downloaded', 'success')
     } catch (err) {
-      alert('Error downloading image: ' + err.message)
+      notify('Error downloading image: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -281,8 +287,41 @@ export default function App() {
   async function handleDownloadMultiple() {
     try {
       await api.downloadMultipleImages(Array.from(selectedImages))
+      notify('Download started', 'success')
     } catch (err) {
-      alert('Error downloading images: ' + err.message)
+      notify('Error downloading images: ' + err.message, 'error')
+      console.error(err)
+    }
+  }
+
+  async function handleBulkRemoveFromLibrary() {
+    const count = selectedImages.size
+    if (!window.confirm(`Remove ${count} image(s) from library (keep files)?`)) return
+    try {
+      for (const imageId of selectedImages) {
+        await removeImage(imageId)
+      }
+      setSelectedImages(new Set())
+      notify(`${count} image(s) removed from library`, 'success')
+      await loadImages()
+    } catch (err) {
+      notify('Error removing images: ' + err.message, 'error')
+      console.error(err)
+    }
+  }
+
+  async function handleBulkDeleteCompletely() {
+    const count = selectedImages.size
+    if (!window.confirm(`Delete ${count} image(s) completely (remove files)?`)) return
+    try {
+      for (const imageId of selectedImages) {
+        await deleteImage(imageId)
+      }
+      setSelectedImages(new Set())
+      notify(`${count} image(s) deleted completely`, 'success')
+      await loadImages()
+    } catch (err) {
+      notify('Error deleting images: ' + err.message, 'error')
       console.error(err)
     }
   }
@@ -325,6 +364,8 @@ export default function App() {
 
   return (
     <div className="app" data-theme={theme}>
+      <NotificationsContainer />
+
       <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} theme={theme} onThemeChange={setTheme} logo={logoImg} icon={{ white: iconWhite, black: iconBlack }} />
 
       <main className="main-content">
@@ -344,9 +385,17 @@ export default function App() {
                   </button>
                 )}
                 {selectedImages.size > 0 && (
-                  <button className="btn-download" onClick={handleDownloadMultiple}>
-                    ↓ Download Selected ({selectedImages.size})
-                  </button>
+                  <>
+                    <button className="btn-download" onClick={handleDownloadMultiple}>
+                      ↓ Download Selected ({selectedImages.size})
+                    </button>
+                    <button className="btn-secondary" onClick={handleBulkRemoveFromLibrary}>
+                      Remove
+                    </button>
+                    <button className="btn-danger" onClick={handleBulkDeleteCompletely}>
+                      Delete
+                    </button>
+                  </>
                 )}
               </div>
             </div>
