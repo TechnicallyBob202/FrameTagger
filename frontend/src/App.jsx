@@ -426,7 +426,6 @@ export default function App() {
       <main className="main-content">
         {activeSection === 'images' && (
           <section className="content-section">
-            <InfoBanner />
             <div className="header-bar">
               <div className="stats-bar">
                 <div className="stat-item">
@@ -884,6 +883,9 @@ export default function App() {
         onCreateTag={handleCreateTagForDialog}
         existingTags={tags}
       />
+
+      {/* INFO BANNER / WELCOME MODAL */}
+      <InfoBanner />
     </div>
   )
 }
