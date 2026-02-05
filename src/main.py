@@ -149,6 +149,15 @@ def find_frameready_on_disk(image_path: str, image_id: int):
     except Exception:
         return None
 
+def get_frameready_folder(folder_id: int):
+    """Get frameready_folder name for a given folder_id"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT frameready_folder FROM folders WHERE id = ?', (folder_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
+
 # FOLDER FUNCTIONS
 def get_folders_from_db():
     conn = sqlite3.connect(DB_PATH)
@@ -805,8 +814,9 @@ async def process_upload(job_id: str, file_contents: list, folder_path: Path, fo
                     cleanup_staging_file(staging_file)
                     continue
                 
-                # Crop and export to FrameReady
-                frameready_path = crop_and_export_frameready(staging_file, folder_path, image_id)
+                # Get frameready folder and crop/export
+                frameready_folder_name = get_frameready_folder(folder_id)
+                frameready_path = crop_and_export_frameready(staging_file, folder_path, image_id, frameready_folder=frameready_folder_name)
                 
                 # Move original to final location
                 final_path = folder_path / filename
@@ -903,7 +913,8 @@ async def handle_duplicate(job_id: str, req: DuplicateActionRequest):
             if not image_id:
                 return {"error": "Failed to add image to database"}
             
-            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id)
+            frameready_folder_name = get_frameready_folder(folder_id)
+            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, frameready_folder=frameready_folder_name)
             final_path = folder_path / filename
             shutil.move(str(staging_path), str(final_path))
             
@@ -933,7 +944,8 @@ async def handle_duplicate(job_id: str, req: DuplicateActionRequest):
             if not image_id:
                 return {"error": "Failed to add image to database"}
             
-            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id)
+            frameready_folder_name = get_frameready_folder(folder_id)
+            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, frameready_folder=frameready_folder_name)
             final_path = folder_path / new_filename
             shutil.move(str(staging_path), str(final_path))
             
@@ -1001,7 +1013,8 @@ async def finalize_positioned_upload(job_id: str, req: PositionRequest):
             return {"error": "Failed to add image to database"}
         
         # Crop with user positioning
-        frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, crop_box)
+        frameready_folder_name = get_frameready_folder(folder_id)
+        frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, crop_box, frameready_folder=frameready_folder_name)
         
         # Move to final location
         final_path = folder_path / filename

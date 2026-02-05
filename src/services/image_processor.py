@@ -120,15 +120,19 @@ def crop_and_export_frameready(
     file_path: str | Path,
     library_root: str | Path,
     image_id: int,
-    crop_box: dict | None = None
+    crop_box: dict | None = None,
+    frameready_folder: str | None = None
 ) -> str:
     """
-    Crop image to 16:9 and export to FrameReady folder at 3840x2160.
+    Crop image to 16:9 and export to .frameready_* folder at 3840x2160.
     crop_box: {x, y, width, height} in normalized 0-1 coords, or None for auto-center.
+    frameready_folder: Name of the frameready folder (e.g., '.frameready_abc123'). Required.
     Returns: path to exported FrameReady file
     """
     library_root = Path(library_root)
-    frameready_dir = library_root / FRAMEREADY_DIR
+    # Use provided frameready_folder, fallback to 'FrameReady' if not given
+    folder_name = frameready_folder if frameready_folder else 'FrameReady'
+    frameready_dir = library_root / folder_name
     frameready_dir.mkdir(parents=True, exist_ok=True)
     
     image = Image.open(file_path)
