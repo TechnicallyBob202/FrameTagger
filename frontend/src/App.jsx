@@ -444,7 +444,7 @@ export default function App() {
 
   async function handleDeleteFolderConfirm(deleteOriginals, deleteFrameready) {
     try {
-      const data = await removeFolder(folderToDelete.id, deleteOriginals, deleteFrameready)
+      const data = await api.removeFolder(folderToDelete.id, deleteOriginals, deleteFrameready)
       if (data && data.error) {
         notify('Error deleting folder: ' + data.error, 'error')
         return
