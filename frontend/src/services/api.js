@@ -89,8 +89,11 @@ export async function addFolder(path) {
   return response.json()
 }
 
-export async function removeFolder(folderId) {
-  const response = await fetch(`${API_URL}/folders/${folderId}`, { method: 'DELETE' })
+export async function removeFolder(folderId, deleteOriginals = false, deleteFrameready = false) {
+  const params = new URLSearchParams()
+  params.append('delete_originals', deleteOriginals)
+  params.append('delete_frameready', deleteFrameready)
+  const response = await fetch(`${API_URL}/folders/${folderId}?${params}`, { method: 'DELETE' })
   return response.json()
 }
 
