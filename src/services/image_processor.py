@@ -121,7 +121,8 @@ def crop_and_export_frameready(
     library_root: str | Path,
     image_id: int,
     crop_box: dict | None = None,
-    frameready_folder: str | None = None
+    frameready_folder: str | None = None,
+    original_filename: str | None = None
 ) -> str:
     """
     Crop image to 16:9 and export to .frameready_* folder at 3840x2160.
@@ -140,7 +141,10 @@ def crop_and_export_frameready(
     width, height = image.size
     
     # Extract original filename and extension
-    original_path = Path(file_path)
+    if original_filename:
+        original_path = Path(original_filename)
+    else:
+        original_path = Path(file_path)
     original_name = original_path.stem  # filename without extension
     original_ext = original_path.suffix  # .jpg, .png, etc
     

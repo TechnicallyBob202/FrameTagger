@@ -880,7 +880,7 @@ async def process_upload(job_id: str, file_contents: list, folder_path: Path, fo
                 
                 # Get frameready folder and crop/export
                 frameready_folder_name = get_frameready_folder(folder_id)
-                frameready_path = crop_and_export_frameready(staging_file, folder_path, image_id, frameready_folder=frameready_folder_name)
+                frameready_path = crop_and_export_frameready(staging_file, folder_path, image_id, frameready_folder=frameready_folder_name, original_filename=filename)
                 
                 # Move original to final location
                 final_path = folder_path / filename
@@ -978,7 +978,7 @@ async def handle_duplicate(job_id: str, req: DuplicateActionRequest):
                 return {"error": "Failed to add image to database"}
             
             frameready_folder_name = get_frameready_folder(folder_id)
-            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, frameready_folder=frameready_folder_name)
+            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, frameready_folder=frameready_folder_name, original_filename=filename)
             final_path = folder_path / filename
             shutil.move(str(staging_path), str(final_path))
             
@@ -1009,7 +1009,7 @@ async def handle_duplicate(job_id: str, req: DuplicateActionRequest):
                 return {"error": "Failed to add image to database"}
             
             frameready_folder_name = get_frameready_folder(folder_id)
-            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, frameready_folder=frameready_folder_name)
+            frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, frameready_folder=frameready_folder_name, original_filename=new_filename)
             final_path = folder_path / new_filename
             shutil.move(str(staging_path), str(final_path))
             
@@ -1078,7 +1078,7 @@ async def finalize_positioned_upload(job_id: str, req: PositionRequest):
         
         # Crop with user positioning
         frameready_folder_name = get_frameready_folder(folder_id)
-        frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, crop_box, frameready_folder=frameready_folder_name)
+        frameready_path = crop_and_export_frameready(staging_path, folder_path, image_id, crop_box, frameready_folder=frameready_folder_name, original_filename=filename)
         
         # Move to final location
         final_path = folder_path / filename

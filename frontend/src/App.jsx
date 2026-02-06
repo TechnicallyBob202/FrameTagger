@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar'
 import { NotificationsContainer } from './components/NotificationsContainer'
 import InfoBanner from './components/InfoBanner'
 import { ConfirmationModal } from './components/modals/ConfirmationModal'
+import { DeleteFolderModal } from './components/modals/DeleteFolderModal'
 import { UploadProgressModal } from './components/modals/UploadProgressModal'
 import { DuplicateModal } from './components/modals/DuplicateModal'
 import { CropPositioningModal } from './components/modals/CropPositioningModal'
@@ -56,6 +57,9 @@ export default function App() {
 
   // Confirmation modal state
   const [confirmation, setConfirmation] = useState(null)
+  
+  // Delete folder modal state
+  const [folderToDelete, setFolderToDelete] = useState(null)
 
   const showConfirmation = (message, onConfirm, isDanger = false) => {
     setConfirmation({
@@ -438,6 +442,27 @@ export default function App() {
   const commonTags = getCommonTags()
   const availableTags = getAvailableTags()
 
+  async function handleDeleteFolderConfirm(deleteOriginals, deleteFrameready) {
+    try {
+      const data = await removeFolder(folderToDelete.id, deleteOriginals, deleteFrameready)
+      if (data && data.error) {
+        notify('Error deleting folder: ' + data.error, 'error')
+        return
+      }
+      setFolderToDelete(null)
+      await loadFolders()
+      await loadImages()
+      const msg = []
+      if (deleteOriginals) msg.push('original images')
+      if (deleteFrameready) msg.push('frameready images')
+      const deletedMsg = msg.length > 0 ? ` and ${msg.join(' and ')}` : ''
+      notify(`Folder removed from database${deletedMsg}`, 'success')
+    } catch (err) {
+      notify('Error deleting folder: ' + err.message, 'error')
+      console.error(err)
+    }
+  }
+
   return (
     <div className="app" data-theme={theme}>
       <NotificationsContainer />
@@ -590,9 +615,7 @@ export default function App() {
                 folders.map((folder) => (
                   <div key={folder.id} className="folder-item">
                     <div className="folder-path">{folder.path}</div>
-                    <button className="btn-danger" onClick={() => {
-                      showConfirmation('Remove folder and all associated images?', () => removeFolder(folder.id), true)
-                    }}>
+                    <button className="btn-danger" onClick={() => setFolderToDelete(folder)}>
                       Remove
                     </button>
                   </div>
@@ -821,6 +844,14 @@ export default function App() {
           setUploadState(prev => ({ ...prev, uploadingFile: null }))
           pollUploadStatus(uploadState.jobId)
         }} />
+      )}
+
+      {folderToDelete && (
+        <DeleteFolderModal 
+          folderName={folderToDelete.path}
+          onConfirm={handleDeleteFolderConfirm}
+          onCancel={() => setFolderToDelete(null)}
+        />
       )}
 
       {confirmation && (
